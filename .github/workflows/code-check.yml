@@ -1,0 +1,11 @@
+name: Code Check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  placeholder:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Add lint, test, and build checks here later."

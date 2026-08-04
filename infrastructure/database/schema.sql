@@ -1,0 +1,1 @@
+-- Database schema placeholder for sensor readings, alerts, users, and device state.

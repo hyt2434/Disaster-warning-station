@@ -1,0 +1,1 @@
+GitHub metadata for issue templates and workflows.

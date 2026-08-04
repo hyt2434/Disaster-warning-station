@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+paho-mqtt
+sqlalchemy
+psycopg2-binary
+python-dotenv
+websockets
+httpx

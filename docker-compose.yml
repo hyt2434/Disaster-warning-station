@@ -1,0 +1,31 @@
+services:
+  mqtt-broker:
+    image: eclipse-mosquitto:2
+    container_name: disaster-warning-mqtt
+    restart: unless-stopped
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./infrastructure/mqtt-broker/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mqtt_data:/mosquitto/data
+      - mqtt_log:/mosquitto/log
+
+  database:
+    image: postgres:16
+    container_name: disaster-warning-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-disaster_warning_station}
+      POSTGRES_USER: ${POSTGRES_USER:-disaster_warning_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./infrastructure/database/schema.sql:/docker-entrypoint-initdb.d/schema.sql:ro
+
+volumes:
+  mqtt_data:
+  mqtt_log:
+  db_data:

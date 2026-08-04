@@ -1,0 +1,1 @@
+Write-Host 'Start backend, frontend, MQTT broker, and database here.'
