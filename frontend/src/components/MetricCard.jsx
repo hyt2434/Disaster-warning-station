@@ -1,11 +1,4 @@
-interface MetricCardProps {
-  label: string;
-  value: string;
-  unit?: string;
-  hint: string;
-}
-
-export function MetricCard({ label, value, unit, hint }: MetricCardProps) {
+export function MetricCard({ label, value, unit, hint }) {
   return (
     <article className="metric-card">
       <p className="card-label">{label}</p>

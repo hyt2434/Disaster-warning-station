@@ -4,15 +4,18 @@ import { MetricCard } from './components/MetricCard';
 import { ReadingForm } from './components/ReadingForm';
 import { ReadingsTable } from './components/ReadingsTable';
 import { createReading, getHealth, getReadings } from './services/api';
-import type { HealthStatus, SensorReading, SensorReadingInput } from './types';
 
-function valueOrDash(value: number | null | undefined, fractionDigits = 1) {
+function valueOrDash(value, fractionDigits = 1) {
   return value === null || value === undefined ? '—' : value.toFixed(fractionDigits);
 }
 
+function getErrorMessage(error, fallbackMessage) {
+  return error instanceof Error ? error.message : fallbackMessage;
+}
+
 export default function App() {
-  const [health, setHealth] = useState<HealthStatus | null>(null);
-  const [readings, setReadings] = useState<SensorReading[]>([]);
+  const [health, setHealth] = useState(null);
+  const [readings, setReadings] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -21,9 +24,11 @@ export default function App() {
   const loadDashboard = useCallback(async () => {
     setLoading(true);
     setError('');
+
     try {
       const nextHealth = await getHealth();
       setHealth(nextHealth);
+
       if (nextHealth.database === 'connected') {
         setReadings(await getReadings());
       } else {
@@ -32,26 +37,27 @@ export default function App() {
       }
     } catch (requestError) {
       setHealth(null);
-      setError(requestError instanceof Error ? requestError.message : 'Không thể kết nối backend.');
+      setError(getErrorMessage(requestError, 'Không thể kết nối backend.'));
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    void loadDashboard();
+    loadDashboard();
   }, [loadDashboard]);
 
-  async function saveReading(payload: SensorReadingInput) {
+  async function saveReading(payload) {
     setSaving(true);
     setError('');
     setMessage('');
+
     try {
       await createReading(payload);
       setMessage('Đã lưu bản ghi vào PostgreSQL thành công.');
       await loadDashboard();
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Không thể lưu dữ liệu.');
+      setError(getErrorMessage(requestError, 'Không thể lưu dữ liệu.'));
     } finally {
       setSaving(false);
     }
@@ -72,7 +78,7 @@ export default function App() {
       </aside>
 
       <main className="dashboard" id="dashboard">
-        <Header health={health} onRefresh={() => void loadDashboard()} refreshing={loading} />
+        <Header health={health} onRefresh={loadDashboard} refreshing={loading} />
 
         {error && <div className="notice error-notice">{error}</div>}
         {message && <div className="notice success-notice">{message}</div>}
@@ -101,7 +107,6 @@ export default function App() {
               <p className="eyebrow">Database test</p>
               <h2 id="form-title">Thêm bản ghi cảm biến</h2>
             </div>
-            <p className="section-description">Biểu mẫu tạm dùng để kiểm chứng luồng Frontend → FastAPI → PostgreSQL.</p>
           </div>
           <ReadingForm saving={saving} onSubmit={saveReading} />
         </section>

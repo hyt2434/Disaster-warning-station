@@ -1,17 +1,18 @@
 from pathlib import Path
 
+import dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+ENV_FILE = PROJECT_ROOT / ".env"
+
+# Đọc các biến trong .env vào môi trường trước khi khởi tạo Settings.
+dotenv.load_dotenv(ENV_FILE)
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(
-        env_file=PROJECT_ROOT / ".env",
-        env_file_encoding="utf-8",
-        extra="ignore",
-    )
+    model_config = SettingsConfigDict(extra="ignore")
 
     app_env: str = "development"
     database_url: str

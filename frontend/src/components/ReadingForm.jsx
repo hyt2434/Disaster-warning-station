@@ -1,10 +1,4 @@
-import { useState, type FormEvent } from 'react';
-import type { SensorReadingInput } from '../types';
-
-interface ReadingFormProps {
-  saving: boolean;
-  onSubmit: (reading: SensorReadingInput) => Promise<void>;
-}
+import { useState } from 'react';
 
 const initialValues = {
   deviceId: 'main-station-01',
@@ -15,12 +9,13 @@ const initialValues = {
   status: 'NORMAL',
 };
 
-export function ReadingForm({ saving, onSubmit }: ReadingFormProps) {
+export function ReadingForm({ saving, onSubmit }) {
   const [values, setValues] = useState(initialValues);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event) {
     event.preventDefault();
-    const payload: SensorReadingInput = {
+
+    const payload = {
       device_id: values.deviceId.trim(),
       temperature: Number(values.temperature),
       humidity: Number(values.humidity),

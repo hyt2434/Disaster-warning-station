@@ -1,10 +1,4 @@
-import type { SensorReading } from '../types';
-
-interface ReadingsTableProps {
-  readings: SensorReading[];
-}
-
-function formatDate(value: string) {
+function formatDate(value) {
   return new Intl.DateTimeFormat('vi-VN', {
     dateStyle: 'short',
     timeStyle: 'medium',
@@ -12,13 +6,17 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
-function display(value: number | null, unit = '') {
+function display(value, unit = '') {
   return value === null ? '—' : `${value}${unit}`;
 }
 
-export function ReadingsTable({ readings }: ReadingsTableProps) {
+export function ReadingsTable({ readings }) {
   if (readings.length === 0) {
-    return <div className="empty-state">Database chưa có dữ liệu. Hãy thêm bản ghi đầu tiên bằng biểu mẫu bên trên.</div>;
+    return (
+      <div className="empty-state">
+        Database chưa có dữ liệu. Hãy thêm bản ghi đầu tiên bằng biểu mẫu bên trên.
+      </div>
+    );
   }
 
   return (
@@ -45,7 +43,9 @@ export function ReadingsTable({ readings }: ReadingsTableProps) {
               <td>{display(reading.gas_raw)}</td>
               <td>{display(reading.water_level_cm, ' cm')}</td>
               <td>
-                <span className={`reading-status status-${reading.status.toLowerCase()}`}>{reading.status}</span>
+                <span className={`reading-status status-${reading.status.toLowerCase()}`}>
+                  {reading.status}
+                </span>
               </td>
             </tr>
           ))}

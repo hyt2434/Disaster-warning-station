@@ -1,12 +1,4 @@
-import type { HealthStatus } from '../types';
-
-interface HeaderProps {
-  health: HealthStatus | null;
-  onRefresh: () => void;
-  refreshing: boolean;
-}
-
-export function Header({ health, onRefresh, refreshing }: HeaderProps) {
+export function Header({ health, onRefresh, refreshing }) {
   const databaseConnected = health?.database === 'connected';
 
   return (

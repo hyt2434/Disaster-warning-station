@@ -15,7 +15,7 @@ MQTT, WebSocket, firmware thật, điều khiển buzzer, AI/DS và push notific
 ## Cấu trúc chính
 
 - `backend/`: FastAPI, SQLAlchemy, REST API và kết nối PostgreSQL.
-- `frontend/`: React, Vite và TypeScript dashboard.
+- `frontend/`: React, Vite và JavaScript dashboard.
 - `infrastructure/database/`: schema PostgreSQL tương ứng với SQLAlchemy models.
 - `firmware/`, `ai/`, `infrastructure/mqtt-broker/`: khung cho giai đoạn sau, chưa tham gia luồng hiện tại.
 - `docs/`: tài liệu API và database.
@@ -67,7 +67,7 @@ npm install
 npm run dev
 ```
 
-Mở `http://localhost:5173`. `VITE_API_BASE_URL` mặc định là `http://localhost:8000`.
+Mở `http://localhost:5173`. Frontend bắt buộc dùng `VITE_API_BASE_URL` trong `.env`; dự án không hard-code URL backend dự phòng.
 
 ## Kiểm tra
 
