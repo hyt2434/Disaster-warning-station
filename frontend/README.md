@@ -1,15 +1,16 @@
 # Frontend
 
-React + Vite + TypeScript dashboard skeleton for charts, history, and buzzer control.
+React + Vite + TypeScript dashboard cho giai đoạn web + database.
 
-## Starter files
+Frontend chỉ đọc dữ liệu qua FastAPI, không chứa dữ liệu mock và không kết nối trực tiếp PostgreSQL. Biểu mẫu nhập tay gọi `POST /api/readings` để kiểm chứng luồng ghi database.
 
-- `package.json`: frontend dependencies and scripts placeholder.
-- `index.html`: app mount point.
-- `src/main.tsx`: application entry point placeholder.
-- `src/App.tsx`: dashboard shell placeholder.
-- `src/styles.css`: basic styling placeholder.
+```powershell
+npm install
+npm run dev
+```
 
-## Notes
+API mặc định: `http://localhost:8000`. Frontend đọc `VITE_API_BASE_URL` từ file `.env` ở thư mục gốc repository.
 
-Add charts, device controls, and history views later.
+```powershell
+npm run build
+```

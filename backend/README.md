@@ -1,17 +1,34 @@
 # Backend
 
-FastAPI backend skeleton for API endpoints, MQTT client integration, database access, WebSocket streaming, and alert services.
+FastAPI backend cho giai đoạn web + PostgreSQL.
 
-## Starter files
+## Cấu trúc `app`
 
-- `requirements.txt`: Python dependencies placeholder.
-- `app/main.py`: FastAPI entry point placeholder.
-- `app/config.py`: environment-based settings.
-- `app/mqtt_client.py`: MQTT integration placeholder.
-- `app/database.py`: database access placeholder.
-- `app/websocket_manager.py`: WebSocket management placeholder.
-- `app/alerts.py`: alerting and notification service placeholder.
+- `main.py`: khởi tạo FastAPI, CORS, lifespan và đăng ký router.
+- `config/`: đọc `.env` và cung cấp cấu hình dùng chung.
+- `database/`: kết nối SQLAlchemy, models và repository.
+- `schemas/`: các Pydantic request/response model.
+- `api/`: các REST API router theo chức năng.
+- `mqtt/`: khung MQTT dành cho giai đoạn sau.
+- `services/`: các service nghiệp vụ; notification hiện chưa triển khai.
+- `websocket/`: khung quản lý WebSocket dành cho giai đoạn sau.
 
-## Notes
+## Chạy trực tiếp
 
-Secrets must come from environment variables, not source code.
+Từ thư mục `backend/app`:
+
+```powershell
+python main.py
+```
+
+`app/main.py` có phần bootstrap nhỏ để Python tìm thấy package `app` khi file được chạy trực tiếp.
+
+Bạn vẫn có thể chạy theo dạng package từ thư mục `backend`:
+
+```powershell
+python -m app.main
+```
+
+Backend đọc `.env` tại thư mục gốc repository. Nếu database chưa sẵn sàng, server vẫn khởi động và `/api/health` trả `database: disconnected`.
+
+MQTT, WebSocket, AI, buzzer và notification chưa được nối vào ứng dụng ở giai đoạn này.
