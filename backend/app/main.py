@@ -19,12 +19,14 @@ if __package__ in (None, ""):
     from app.api import health_router, readings_router
     from app.config import settings
     from app.database import create_tables
+    from app.mqtt import mqtt_client
 
     uvicorn_target = "main:app"
 else:
     from .api import health_router, readings_router
     from .config import settings
     from .database import create_tables
+    from .mqtt import mqtt_client
 
     uvicorn_target = "app.main:app"
 
@@ -38,8 +40,12 @@ async def lifespan(_: FastAPI):
         create_tables()
     except SQLAlchemyError as error:
         logger.warning("Database is not ready: %s", error)
-    yield
+    mqtt_client.connect()
 
+    try:
+        yield
+    finally:
+        mqtt_client.disconnect()
 
 app = FastAPI(
     title="Disaster Warning Station API",

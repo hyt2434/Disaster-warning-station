@@ -5,3 +5,4 @@ joblib
 matplotlib
 seaborn
 jupyter
+paho-mqtt==2.1.0

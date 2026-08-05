@@ -17,8 +17,12 @@ class Settings(BaseSettings):
     app_env: str = "development"
     database_url: str
     cors_origins: str = "http://localhost:5173"
-    mqtt_broker_host: str = "localhost"
+
+    mqtt_broker_host: str = "127.0.0.1"
     mqtt_broker_port: int = 1883
+    mqtt_username: str = ""
+    mqtt_password: str = ""
+    mqtt_client_id: str = "disaster-warning-backend"
 
     @property
     def allowed_origins(self) -> list[str]:
