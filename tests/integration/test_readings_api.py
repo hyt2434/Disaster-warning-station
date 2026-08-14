@@ -16,7 +16,10 @@ def test_health_and_reading_flow() -> None:
     with TestClient(app) as client:
         health = client.get("/api/health")
         assert health.status_code == 200
-        assert health.json() == {"backend": "online", "database": "connected"}
+        health_data = health.json()
+        assert health_data["backend"] == "online"
+        assert health_data["database"] == "connected"
+        assert health_data["mqtt"] in {"connected", "disconnected"}
 
         empty_latest = client.get("/api/readings/latest")
         assert empty_latest.status_code == 200
