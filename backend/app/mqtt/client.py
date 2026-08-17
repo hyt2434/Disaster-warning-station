@@ -1,18 +1,34 @@
 import logging
 import threading
 
+import os          
+import joblib      
+import numpy as np
+
+import json
+from datetime import datetime, timezone
+
 import paho.mqtt.client as mqtt
 
 from ..config import settings
+from ..database.mongodb import collection
 from .topics import (
     BACKEND_STATUS_TOPIC,
     MAIN_STATUS_TOPIC,
     MAIN_TELEMETRY_TOPIC,
+    COMMAND_BUZZER_TOPIC,
 )
 
 
 logger = logging.getLogger("uvicorn.error")
 
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "ml_models", "disaster_model.pkl")
+try:
+    ai_model = joblib.load(MODEL_PATH)
+    logger.info("🧠 Đã tải thành công 'Bộ não' AI vào Backend!")
+except Exception as e:
+    logger.error("❌ Không tìm thấy file mô hình AI: %s", e)
+    ai_model = None
 
 class MQTTClient:
     def __init__(self) -> None:
@@ -178,6 +194,51 @@ class MQTTClient:
             message.topic,
             payload,
         )
+        if message.topic == MAIN_TELEMETRY_TOPIC:
+            try:
+                # Chuyển đổi payload string thành dictionary
+                data = json.loads(payload)
+                
+                # Tạo bản ghi với Time-Series tiêu chuẩn (UTC)
+                sensor_record = {
+                    "timestamp": datetime.now(timezone.utc),
+                    "temperature": data.get("temperature", 0.0),
+                    "humidity": data.get("humidity", 0.0),
+                    "smoke_level": data.get("smoke", 0.0),
+                    "water_level": data.get("water", 0.0)
+                }
+                
+                # Thực hiện lệnh ghi vào Cloud
+                collection.insert_one(sensor_record)
+                logger.info("✅ Đã lưu dữ liệu telemetry lên MongoDB Cloud thành công!")
+            
+                if ai_model is not None:
+                    # 1. Đưa số liệu vào mảng theo đúng thứ tự lúc train: [Nhiệt độ, Độ ẩm, Khói, Nước]
+                    input_features = np.array([[
+                        sensor_record["temperature"],
+                        sensor_record["humidity"],
+                        sensor_record["smoke_level"],
+                        sensor_record["water_level"]
+                    ]])
+                    
+                    # 2. AI đưa ra phán đoán (0 là An toàn, 1 là Nguy hiểm)
+                    prediction = ai_model.predict(input_features)
+                    
+                    # 3. Ra quyết định
+                    if prediction[0] == 1.0:
+                        logger.warning("🚨 AI CẢNH BÁO NGUY HIỂM! Chuẩn bị bật còi báo động!")
+                        # Publish lệnh ON xuống Topic của ESP32 để kích hoạt còi
+                        client.publish(
+                            topic=COMMAND_BUZZER_TOPIC,
+                            payload="ON",
+                            qos=1
+                        )
+                    else:
+                        logger.info("✅ AI đánh giá: Môi trường an toàn.")
 
+            except json.JSONDecodeError:
+                logger.error("❌ Dữ liệu telemetry không phải là định dạng JSON hợp lệ.")
+            except Exception as e:
+                logger.error("❌ Lỗi hệ thống khi lưu vào MongoDB: %s", e)
 
 mqtt_client = MQTTClient()

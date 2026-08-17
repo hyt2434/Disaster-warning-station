@@ -1,6 +1,12 @@
-def main() -> None:
-    pass
+from sklearn.metrics import accuracy_score, classification_report
 
-
-if __name__ == "__main__":
-    main()
+def evaluate_model(model, X_test, y_test):
+    """Đánh giá hiệu suất của mô hình AI"""
+    y_pred = model.predict(X_test)
+    
+    acc = accuracy_score(y_test, y_pred)
+    print(f"📊 Độ chính xác trên tập test: {acc * 100:.2f}%")
+    print("\nBáo cáo chi tiết:")
+    print(classification_report(y_test, y_pred))
+    
+    return acc

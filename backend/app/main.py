@@ -41,7 +41,7 @@ async def lifespan(_: FastAPI):
     except SQLAlchemyError as error:
         logger.warning("Database is not ready: %s", error)
     mqtt_client.connect()
-
+    logger.info("🚀 Backend Services (MQTT, MongoDB) started successfully!")
     try:
         yield
     finally:

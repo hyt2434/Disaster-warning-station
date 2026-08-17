@@ -38,6 +38,6 @@ def retrain_model_from_cloud():
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
     joblib.dump(model, model_path)
     print(f"✅ Đã cập nhật 'Bộ não' AI mới từ dữ liệu thực tế tại vị trí lắp đặt! Lưu tại: {model_path}")
-
+git
 if __name__ == "__main__":
     retrain_model_from_cloud()
