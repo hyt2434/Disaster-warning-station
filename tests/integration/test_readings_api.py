@@ -20,6 +20,12 @@ def test_health_and_reading_flow() -> None:
         assert health_data["backend"] == "online"
         assert health_data["database"] == "connected"
         assert health_data["mqtt"] in {"connected", "disconnected"}
+        assert health_data["mongodb"] in {
+            "connected",
+            "disconnected",
+            "not_configured",
+        }
+        assert health_data["mongodb_pending"] >= 0
 
         empty_latest = client.get("/api/readings/latest")
         assert empty_latest.status_code == 200

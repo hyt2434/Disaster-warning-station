@@ -3,20 +3,29 @@ import joblib
 import pandas as pd
 from pymongo import MongoClient
 from sklearn.ensemble import RandomForestClassifier
+from dotenv import load_dotenv
 
-# 1. Kết nối đến MongoDB Atlas của bạn
-MONGO_URI = "mongodb+srv://uoprewamnkl_db_user:FmmRWFda7iQqisp5@disastercluster.iwjloi5.mongodb.net/?appName=DisasterCluster"
-client = MongoClient(MONGO_URI)
-db = client["disaster_db"] # Tên database của bạn
-collection = db["sensor_readings"] # Tên collection lưu telemetry
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
+
 
 def retrain_model_from_cloud():
+    mongo_uri = os.getenv("MONGODB_URI", "")
+    if not mongo_uri:
+        raise RuntimeError("Thiếu MONGODB_URI trong file .env")
+
+    client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
+    client.admin.command("ping")
+    database = client[os.getenv("MONGODB_DATABASE", "DisasterDB")]
+    collection = database[os.getenv("MONGODB_COLLECTION", "sensor_data")]
+
     print("🔄 Đang tải dữ liệu thực tế từ MongoDB Atlas...")
     
     # Lấy toàn bộ dữ liệu từ Cloud xuống DataFrame
     data = list(collection.find({}, {"_id": 0, "timestamp": 0}))
     if len(data) < 100:
         print("⚠️ Chưa đủ dữ liệu thực tế để huấn luyện lại (cần ít nhất 100 mẫu).")
+        client.close()
         return
         
     df = pd.DataFrame(data)
@@ -26,7 +35,10 @@ def retrain_model_from_cloud():
     df['label'] = 0
     df.loc[(df['temperature'] > 50) | (df['smoke_level'] > 700), 'label'] = 1
     
-    X = df[['temperature', 'humidity', 'smoke_level', 'water_level']]
+    # Giữ feature water giống model synthetic: 0 = an toàn, 1 = nguy hiểm.
+    df['water_danger'] = (df['water_level'] >= 40.0).astype(int)
+
+    X = df[['temperature', 'humidity', 'smoke_level', 'water_danger']]
     y = df['label']
     
     print(f"🧠 Đang huấn luyện mô hình với {len(df)} mẫu dữ liệu thực tế...")
@@ -34,10 +46,18 @@ def retrain_model_from_cloud():
     model.fit(X, y)
     
     # Lưu đè file .pkl mới vào backend
-    model_path = os.path.join("backend", "app", "ml_models", "disaster_model.pkl")
+    model_path = os.path.join(
+        PROJECT_ROOT,
+        "backend",
+        "app",
+        "ml_models",
+        "disaster_model.pkl",
+    )
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
     joblib.dump(model, model_path)
     print(f"✅ Đã cập nhật 'Bộ não' AI mới từ dữ liệu thực tế tại vị trí lắp đặt! Lưu tại: {model_path}")
-git
+    client.close()
+
+
 if __name__ == "__main__":
     retrain_model_from_cloud()

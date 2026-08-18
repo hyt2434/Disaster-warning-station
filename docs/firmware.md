@@ -50,10 +50,10 @@ Sensors / Outputs
 
 ```text
 firmware/
-├── main-station/
-│   └── main_station.cpp
-├── shelf-node/
-│   └── f7_station.cpp
+├── main_station/
+│   └── main_station.ino
+├── f7_station/
+│   └── f7_station.ino
 └── tools/
     ├── connect_wifi_main.cpp
     └── connect_wifi_c3.cpp

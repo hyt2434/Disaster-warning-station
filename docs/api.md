@@ -7,9 +7,14 @@ Base URL mặc định: `http://localhost:8000`.
 ```json
 {
   "backend": "online",
-  "database": "connected"
+  "database": "connected",
+  "mqtt": "connected",
+  "mongodb": "connected",
+  "mongodb_pending": 0
 }
 ```
+
+`mongodb` có thể là `connected`, `disconnected` hoặc `not_configured`. `mongodb_pending` là số telemetry đang chờ đẩy lên Atlas sau khi Cloud kết nối lại.
 
 ## `GET /api/readings?limit=20`
 

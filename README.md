@@ -18,7 +18,7 @@ React local → FastAPI REST API → PostgreSQL
 
 - Frontend React chạy tại `http://localhost:5173`.
 - Backend FastAPI chạy tại `http://localhost:8000`.
-- PostgreSQL lưu thiết bị và lịch sử dữ liệu được gửi qua REST API.
+- PostgreSQL lưu thiết bị và lịch sử dữ liệu từ REST API lẫn MQTT.
 - MQTT nhận telemetry từ ESP32.
 - Code mới có tích hợp MongoDB Atlas và mô hình AI để đánh giá dữ liệu MQTT.
 - Push notification chưa được triển khai; `AlertService` hiện vẫn là khung.
@@ -48,7 +48,12 @@ PostgreSQL local có thể được cài trực tiếp hoặc chạy bằng Dock
 
 ```dotenv
 DATABASE_URL=postgresql://<user>:<password>@localhost:5432/<database>
+MONGODB_URI=mongodb+srv://<user>:<password>@<cluster>/?appName=<app>
+MONGODB_DATABASE=DisasterDB
+MONGODB_COLLECTION=sensor_data
 ```
+
+MongoDB Atlas là Cloud storage bắt buộc của demo. Nếu Atlas tạm mất kết nối, backend giữ tối đa 10.000 telemetry trong RAM và tự đẩy bù khi kết nối lại; PostgreSQL local vẫn giữ dữ liệu cho dashboard.
 
 Chạy backend:
 
@@ -103,13 +108,14 @@ npm run build
 - [Firmware ESP32](docs/firmware.md)
 - [MQTT topics và payload](docs/mqtt-contract.md)
 - [Cài đặt MQTT local](docs/mqtt-local-setup.md)
+- [Hướng dẫn setup demo và fallback Wi-Fi](docs/demo-setup.md)
 
-## Lưu ý với code vừa pull
+## Trạng thái cần hoàn thiện
 
 - MongoDB Atlas, model AI và logic suy luận MQTT đã được thêm trong hai commit mới nhất.
 - Push notification chưa có implementation.
-- Topic MQTT trong firmware/tài liệu và topic backend đang chưa đồng nhất hoàn toàn.
-- Dependency MongoDB/AI chưa được khai báo đủ trong `backend/requirements.txt`.
-- Chuỗi kết nối MongoDB hiện nằm trực tiếp trong source; cần đổi credential và chuyển sang `.env` trước khi chia sẻ repository.
-
-Các điểm trên được giữ nguyên để không thay đổi phần tích hợp vừa pull.
+- Topic MQTT của firmware và backend đã được đồng bộ về root `disaster/`.
+- Telemetry MQTT từ Main được lưu vào PostgreSQL để dashboard đọc, đồng thời vẫn đi qua MongoDB/AI.
+- Các dependency MongoDB/AI đã được thêm vào `backend/requirements.txt`.
+- Model `*.pkl` được tạo local và bị Git ignore; AI tạm bỏ qua dự đoán nếu chưa có model runtime.
+- MongoDB đọc credential từ `.env`; không lưu URI hoặc mật khẩu Cloud trong source.

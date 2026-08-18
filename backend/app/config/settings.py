@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(extra="ignore")
 
     app_env: str = "development"
+    fastapi_host: str = "127.0.0.1"
+    fastapi_port: int = 8000
     database_url: str
     cors_origins: str = "http://localhost:5173"
 
@@ -23,6 +25,10 @@ class Settings(BaseSettings):
     mqtt_username: str = ""
     mqtt_password: str = ""
     mqtt_client_id: str = "disaster-warning-backend"
+
+    mongodb_uri: str = ""
+    mongodb_database: str = "DisasterDB"
+    mongodb_collection: str = "sensor_data"
 
     @property
     def allowed_origins(self) -> list[str]:

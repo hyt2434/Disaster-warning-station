@@ -11,7 +11,10 @@ from datetime import datetime, timezone
 import paho.mqtt.client as mqtt
 
 from ..config import settings
-from ..database.mongodb import collection
+from ..database import SessionLocal
+from ..database.mongodb import mongo_store
+from ..database.repository import create_reading
+from ..schemas import SensorReadingCreate
 from .topics import (
     BACKEND_STATUS_TOPIC,
     MAIN_STATUS_TOPIC,
@@ -200,25 +203,65 @@ class MQTTClient:
                 data = json.loads(payload)
                 
                 # Tạo bản ghi với Time-Series tiêu chuẩn (UTC)
+                gas_value = data.get("gas", data.get("smoke", 0.0))
+                water_level = data.get("waterLevel", data.get("water", 0.0))
+
                 sensor_record = {
                     "timestamp": datetime.now(timezone.utc),
+                    "device_id": data.get("deviceId", "main-station-01"),
                     "temperature": data.get("temperature", 0.0),
                     "humidity": data.get("humidity", 0.0),
-                    "smoke_level": data.get("smoke", 0.0),
-                    "water_level": data.get("water", 0.0)
+                    "smoke_level": gas_value,
+                    "water_level": water_level,
+                    "motion_status": data.get("motionStatus", "NORMAL"),
+                    "system_status": data.get("systemStatus", "NORMAL"),
                 }
+
+                # PostgreSQL là nguồn dữ liệu mà REST API/dashboard đang đọc.
+                database = SessionLocal()
+                try:
+                    system_status = sensor_record["system_status"].upper()
+                    if system_status == "SAFE":
+                        system_status = "NORMAL"
+
+                    create_reading(
+                        database,
+                        SensorReadingCreate(
+                            device_id=sensor_record["device_id"],
+                            temperature=float(sensor_record["temperature"]),
+                            humidity=float(sensor_record["humidity"]),
+                            gas_raw=int(sensor_record["smoke_level"]),
+                            water_level_cm=float(sensor_record["water_level"]),
+                            status=system_status,
+                        ),
+                    )
+                    logger.info("Đã lưu telemetry MQTT vào PostgreSQL.")
+                except Exception as database_error:
+                    database.rollback()
+                    logger.error(
+                        "Không thể lưu telemetry MQTT vào PostgreSQL: %s",
+                        database_error,
+                    )
+                finally:
+                    database.close()
                 
-                # Thực hiện lệnh ghi vào Cloud
-                collection.insert_one(sensor_record)
-                logger.info("✅ Đã lưu dữ liệu telemetry lên MongoDB Cloud thành công!")
+                # MongoDB là Cloud storage của hệ thống. Khi Atlas tạm mất,
+                # store giữ record trong RAM và tự đẩy bù sau khi reconnect.
+                if mongo_store.store(sensor_record):
+                    logger.info("Đã lưu telemetry lên MongoDB Cloud.")
+                else:
+                    logger.warning("Telemetry MongoDB đang chờ đồng bộ.")
             
                 if ai_model is not None:
                     # 1. Đưa số liệu vào mảng theo đúng thứ tự lúc train: [Nhiệt độ, Độ ẩm, Khói, Nước]
+                    # Model hiện được train với water là cờ 0/1.
+                    water_danger = 1.0 if water_level >= 40.0 else 0.0
+
                     input_features = np.array([[
                         sensor_record["temperature"],
                         sensor_record["humidity"],
                         sensor_record["smoke_level"],
-                        sensor_record["water_level"]
+                        water_danger
                     ]])
                     
                     # 2. AI đưa ra phán đoán (0 là An toàn, 1 là Nguy hiểm)
@@ -238,7 +281,7 @@ class MQTTClient:
 
             except json.JSONDecodeError:
                 logger.error("❌ Dữ liệu telemetry không phải là định dạng JSON hợp lệ.")
-            except Exception as e:
-                logger.error("❌ Lỗi hệ thống khi lưu vào MongoDB: %s", e)
+            except Exception as error:
+                logger.error("Lỗi khi xử lý telemetry MQTT: %s", error)
 
 mqtt_client = MQTTClient()

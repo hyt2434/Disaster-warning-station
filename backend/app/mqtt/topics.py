@@ -1,10 +1,14 @@
-MAIN_TELEMETRY_TOPIC = "dws/main/telemetry"
-MAIN_STATUS_TOPIC = "dws/main/status"
-BUZZER_COMMAND_TOPIC = "dws/main/command/buzzer"
-BACKEND_STATUS_TOPIC = "dws/backend/status"
+ROOT_TOPIC = "disaster"
 
-# Topic nhận dữ liệu từ ESP32 đẩy lên
-TELEMETRY_TOPIC = "disaster/main/telemetry"
+MAIN_TELEMETRY_TOPIC = f"{ROOT_TOPIC}/main/telemetry"
+MAIN_STATUS_TOPIC = f"{ROOT_TOPIC}/main/status"
+BUZZER_COMMAND_TOPIC = f"{ROOT_TOPIC}/main/command/buzzer"
+BACKEND_STATUS_TOPIC = f"{ROOT_TOPIC}/backend/status"
 
-# Topic gửi lệnh điều khiển (bật/tắt còi) từ Web xuống ESP32
-COMMAND_BUZZER_TOPIC = "disaster/main/command/buzzer"
+F7_TELEMETRY_TOPIC = f"{ROOT_TOPIC}/f7/telemetry"
+F7_STATE_TOPIC = f"{ROOT_TOPIC}/f7/state"
+F7_STATUS_TOPIC = f"{ROOT_TOPIC}/f7/status"
+
+# Tên tương thích với code tích hợp AI hiện tại.
+TELEMETRY_TOPIC = MAIN_TELEMETRY_TOPIC
+COMMAND_BUZZER_TOPIC = BUZZER_COMMAND_TOPIC

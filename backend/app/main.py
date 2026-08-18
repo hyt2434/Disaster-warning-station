@@ -19,6 +19,7 @@ if __package__ in (None, ""):
     from app.api import health_router, readings_router
     from app.config import settings
     from app.database import create_tables
+    from app.database.mongodb import mongo_store
     from app.mqtt import mqtt_client
 
     uvicorn_target = "main:app"
@@ -26,6 +27,7 @@ else:
     from .api import health_router, readings_router
     from .config import settings
     from .database import create_tables
+    from .database.mongodb import mongo_store
     from .mqtt import mqtt_client
 
     uvicorn_target = "app.main:app"
@@ -40,12 +42,14 @@ async def lifespan(_: FastAPI):
         create_tables()
     except SQLAlchemyError as error:
         logger.warning("Database is not ready: %s", error)
+    mongo_store.connect()
     mqtt_client.connect()
-    logger.info("🚀 Backend Services (MQTT, MongoDB) started successfully!")
+    logger.info("Backend started; MQTT connection is running in the background.")
     try:
         yield
     finally:
         mqtt_client.disconnect()
+        mongo_store.close()
 
 app = FastAPI(
     title="Disaster Warning Station API",
@@ -66,4 +70,9 @@ app.include_router(readings_router)
 
 
 if __name__ == "__main__":
-    uvicorn.run(uvicorn_target, host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run(
+        uvicorn_target,
+        host=settings.fastapi_host,
+        port=settings.fastapi_port,
+        reload=settings.app_env == "development",
+    )
