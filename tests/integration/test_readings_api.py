@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 database_path = Path(tempfile.gettempdir()) / f"dws-test-{uuid4().hex}.sqlite"
 os.environ["DATABASE_URL"] = f"sqlite:///{database_path.as_posix()}"
 
-from backend.app.main import app  # noqa: E402
+from backend.app.application import app  # noqa: E402
 
 
 def test_health_and_reading_flow() -> None:
