@@ -1,4 +1,4 @@
-# MQTT Topics & Payload Contract
+# Hợp đồng MQTT topics và payload
 
 > **Project:** Disaster Warning System  
 > **Firmware:** ESP32-S3 Main + XIAO ESP32-C3 F7  

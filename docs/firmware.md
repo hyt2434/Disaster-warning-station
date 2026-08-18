@@ -1,4 +1,4 @@
-# Disaster Warning Station - Firmware Guide
+# Firmware ESP32
 
 ## 1. Mục tiêu hệ thống
 
@@ -49,20 +49,17 @@ Sensors / Outputs
 ## 3. Cấu trúc project
 
 ```text
-disaster_warning_firmware/
-|
-+-- DISASTER_WARNING_FIRMWARE_GUIDE.md
-|
-+-- firmware/
-    |
-    +-- main-station/
-    |   +-- main_station.ino
-    |
-    +-- f7-station/
-        +-- f7_station.ino
+firmware/
+├── main-station/
+│   └── main_station.cpp
+├── shelf-node/
+│   └── f7_station.cpp
+└── tools/
+    ├── connect_wifi_main.cpp
+    └── connect_wifi_c3.cpp
 ```
 
-**Không compile hai file `.ino` chung một project.** Mỗi board được upload riêng.
+Hai firmware được upload riêng cho từng board. Các file trong `tools/` chỉ dùng để kiểm tra kết nối Wi-Fi/MQTT độc lập.
 
 ---
 

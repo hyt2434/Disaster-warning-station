@@ -1,4 +1,4 @@
-# PostgreSQL — Phase 1
+# Cơ sở dữ liệu PostgreSQL
 
 ## Bảng đang dùng
 

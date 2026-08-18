@@ -1,4 +1,4 @@
-# REST API — Phase 1
+# REST API
 
 Base URL mặc định: `http://localhost:8000`.
 

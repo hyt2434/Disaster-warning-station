@@ -1,51 +1,57 @@
 # Disaster Warning Station
 
-Monorepo cho trạm IoT cảnh báo sớm cháy, ngập và bất thường môi trường.
+Đồ án demo trạm IoT cảnh báo cháy, ngập và bất thường môi trường.
 
 ## Phạm vi hiện tại
 
-Phiên bản đầu tiên chỉ triển khai một luồng nhỏ, có thể kiểm tra độc lập:
-
-`React → FastAPI REST API → PostgreSQL → FastAPI → React`
-
-Website hiển thị trạng thái kết nối database, dữ liệu cảm biến mới nhất, 20 bản ghi gần nhất và có biểu mẫu nhập dữ liệu thủ công để kiểm tra việc ghi PostgreSQL. Dữ liệu hiển thị không phải dữ liệu mock trong frontend.
-
-MQTT, WebSocket, firmware thật, điều khiển buzzer, AI/DS và push notification được để dành cho các giai đoạn sau. Dự án hiện không dùng IFTTT.
-
-## Cấu trúc chính
-
-- `backend/`: FastAPI, SQLAlchemy, REST API và kết nối PostgreSQL.
-- `frontend/`: React, Vite và JavaScript dashboard.
-- `infrastructure/database/`: schema PostgreSQL tương ứng với SQLAlchemy models.
-- `firmware/`, `ai/`, `infrastructure/mqtt-broker/`: khung cho giai đoạn sau, chưa tham gia luồng hiện tại.
-- `docs/`: tài liệu API và database.
-- `tests/`: test tích hợp tối thiểu cho API/database.
-
-## 1. Chuẩn bị PostgreSQL
-
-Có thể dùng PostgreSQL cài trên máy hoặc một PostgreSQL cloud. Tạo database và user, sau đó chạy [schema.sql](infrastructure/database/schema.sql), hoặc để backend tự tạo hai bảng khi khởi động.
-
-Ví dụ URL local:
+Hệ thống được phát triển để chạy local:
 
 ```text
-postgresql://disaster_warning_user:your_password@localhost:5432/disaster_warning_station
+ESP32 → Mosquitto MQTT → FastAPI
+                           ├── PostgreSQL
+                           ├── MongoDB Atlas
+                           ├── mô hình AI
+                           └── lệnh điều khiển buzzer
+
+React local → FastAPI REST API → PostgreSQL
 ```
 
-File cấu hình dùng chung nằm tại `.env` ở thư mục gốc repository. Điền `DATABASE_URL` theo PostgreSQL trên máy, ví dụ:
+- Frontend React chạy tại `http://localhost:5173`.
+- Backend FastAPI chạy tại `http://localhost:8000`.
+- PostgreSQL lưu thiết bị và lịch sử dữ liệu được gửi qua REST API.
+- MQTT nhận telemetry từ ESP32.
+- Code mới có tích hợp MongoDB Atlas và mô hình AI để đánh giá dữ liệu MQTT.
+- Push notification chưa được triển khai; `AlertService` hiện vẫn là khung.
+
+Đây là đồ án demo local, chưa có cấu hình triển khai production.
+
+## Cấu trúc repository
 
 ```text
-DATABASE_URL=postgresql://postgres:your_password@localhost:5432/DisasterWarning
+Disaster-warning-station/
+├── backend/          FastAPI, PostgreSQL, MongoDB, MQTT và AI runtime
+├── frontend/         React + Vite dashboard
+├── firmware/         Firmware hai ESP32 và công cụ kiểm tra kết nối
+├── ai/               Script huấn luyện, đánh giá và retrain mô hình
+├── models/           Model sinh ra khi chạy script train từ thư mục gốc
+├── infrastructure/   PostgreSQL schema và Mosquitto local
+├── docs/             Tài liệu kỹ thuật còn sử dụng
+├── tests/            Integration test
+├── docker-compose.yml
+└── README.md
 ```
 
-Backend và frontend đều đọc file này. Không commit `.env` vì file chứa mật khẩu database.
+Backend tải model runtime từ `backend/app/ml_models/disaster_model.pkl`. Các bản model khác được giữ nguyên theo code vừa pull để phục vụ quá trình train/retrain.
 
-Nếu máy đã có Docker, có thể khởi động riêng PostgreSQL bằng lệnh tùy chọn:
+## Chạy PostgreSQL và backend
 
-```powershell
-docker compose up -d database
+PostgreSQL local có thể được cài trực tiếp hoặc chạy bằng Docker. Cấu hình kết nối nằm trong `.env`:
+
+```dotenv
+DATABASE_URL=postgresql://<user>:<password>@localhost:5432/<database>
 ```
 
-## 2. Chạy backend
+Chạy backend:
 
 ```powershell
 cd backend
@@ -55,11 +61,12 @@ python -m pip install -r requirements.txt
 python -m app.main
 ```
 
-Kiểm tra tại `http://localhost:8000/api/health` và tài liệu API tại `http://localhost:8000/docs`.
+Kiểm tra:
 
-## 3. Chạy frontend
+- Health: `http://localhost:8000/api/health`
+- Swagger UI: `http://localhost:8000/docs`
 
-Mở terminal khác:
+## Chạy frontend
 
 ```powershell
 cd frontend
@@ -67,33 +74,43 @@ npm install
 npm run dev
 ```
 
-Mở `http://localhost:5173`. Frontend bắt buộc dùng `VITE_API_BASE_URL` trong `.env`; dự án không hard-code URL backend dự phòng.
+Mở `http://localhost:5173`.
+
+## Chạy hạ tầng local bằng Docker
+
+Nếu máy có Docker:
+
+```powershell
+docker compose up -d database mqtt-broker
+```
+
+`docker-compose.yml` chỉ phục vụ môi trường local, không phải cấu hình production.
 
 ## Kiểm tra
+
+```powershell
+python -m pytest tests/integration/test_readings_api.py
+```
 
 ```powershell
 cd frontend
 npm run build
 ```
 
-```powershell
-python -m pytest tests/integration/test_readings_api.py
-```
+## Tài liệu
 
-Test tích hợp dùng SQLite tạm để kiểm tra logic API mà không thay thế cấu hình PostgreSQL của ứng dụng.
+- [REST API](docs/api.md)
+- [PostgreSQL](docs/database.md)
+- [Firmware ESP32](docs/firmware.md)
+- [MQTT topics và payload](docs/mqtt-contract.md)
+- [Cài đặt MQTT local](docs/mqtt-local-setup.md)
 
-## API hiện có
+## Lưu ý với code vừa pull
 
-- `GET /api/health`: trạng thái backend và database.
-- `GET /api/readings?limit=20`: danh sách bản ghi mới nhất.
-- `GET /api/readings/latest`: bản ghi mới nhất hoặc `null`.
-- `POST /api/readings`: lưu một bản ghi cảm biến.
+- MongoDB Atlas, model AI và logic suy luận MQTT đã được thêm trong hai commit mới nhất.
+- Push notification chưa có implementation.
+- Topic MQTT trong firmware/tài liệu và topic backend đang chưa đồng nhất hoàn toàn.
+- Dependency MongoDB/AI chưa được khai báo đủ trong `backend/requirements.txt`.
+- Chuỗi kết nối MongoDB hiện nằm trực tiếp trong source; cần đổi credential và chuyển sang `.env` trước khi chia sẻ repository.
 
-Xem chi tiết tại [docs/api.md](docs/api.md) và [docs/database.md](docs/database.md).
-
-## Giới hạn hiện tại
-
-- Biểu mẫu nhập tay chỉ dùng để chứng minh kết nối database trước khi ESP32/MQTT được tích hợp.
-- Chưa có realtime WebSocket; nhấn “Làm mới” để đọc lại dữ liệu.
-- Chưa có authentication, phân quyền, chart, command, notification hoặc AI.
-- Đây là mô hình hỗ trợ giám sát, không thay thế thiết bị an toàn đã được kiểm định.
+Các điểm trên được giữ nguyên để không thay đổi phần tích hợp vừa pull.
