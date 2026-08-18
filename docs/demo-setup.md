@@ -1,6 +1,6 @@
 # Hướng dẫn chạy demo
 
-Tài liệu này tập trung vào ESP32 Main, PostgreSQL, ThingSpeak, AI và website.
+Tài liệu này tập trung vào ESP32 Main, PostgreSQL, ThingSpeak, Pushsafer, AI và website.
 
 ## 1. Luồng hoạt động
 
@@ -12,6 +12,7 @@ ESP32 tính SAFE / WARNING / DANGER
 Backend FastAPI
    ├── PostgreSQL: lưu đầy đủ để website đọc
    ├── ThingSpeak: lưu một mẫu mỗi 15 giây
+   ├── Pushsafer: gửi khi trạng thái chuyển sang WARNING/DANGER
    └── AI: dự đoán SAFE hoặc DANGER
         ↓ REST API
 Frontend React
@@ -136,6 +137,9 @@ MQTT_BROKER_PORT=1883
 THINGSPEAK_WRITE_API_KEY=<Write API Key>
 THINGSPEAK_CHANNEL_ID=<Channel ID>
 THINGSPEAK_READ_API_KEY=<Read API Key nếu channel private>
+
+PUSHSAFER_PRIVATE_KEY=<Private Key>
+PUSHSAFER_DEVICE_ID=a
 ```
 
 API key chỉ đặt trong `.env`, không ghi vào file Python hoặc commit lên Git.
@@ -162,6 +166,9 @@ Trạng thái được đổi thành số để vẽ biểu đồ:
 | DANGER | 2 |
 
 ESP32 gửi MQTT mỗi 2 giây, nhưng backend chỉ gửi ThingSpeak tối đa một lần mỗi 15 giây để tránh rate limit.
+
+Hướng dẫn tạo channel, lấy API key và cấu hình Pushsafer nằm tại
+[Cài đặt ThingSpeak và Pushsafer](cloud-notifications-setup.md).
 
 ## 8. Cấu hình và nạp ESP32 Main
 
@@ -218,6 +225,7 @@ Khởi động lại backend sau khi retrain để nạp model mới.
 | Backend `/api/health` | PostgreSQL, MQTT và ThingSpeak có trạng thái |
 | PostgreSQL | Bảng `sensor_readings` tăng bản ghi |
 | ThingSpeak | Field 1–6 cập nhật khoảng 15 giây/lần |
+| Pushsafer | Có thông báo khi hệ thống mới chuyển sang WARNING/DANGER |
 | Website | Hiện nhiệt độ, gas, nước, System, Buzzer và Mute |
 | Nhấn OFF khi DANGER | Còi tắt nhưng System vẫn DANGER |
 | System trở về SAFE | `buzzerMuted=false` |

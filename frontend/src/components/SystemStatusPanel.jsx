@@ -5,7 +5,7 @@ const functions = [
   ['F4', 'PostgreSQL lưu lịch sử; ThingSpeak lưu dữ liệu Cloud'],
   ['F5', 'AI phân loại rủi ro và frontend dự đoán xu hướng'],
   ['F6', 'JSN-SR04T: đo mực nước và cảnh báo ba LED'],
-  ['F7', 'MPU6050: rung/nghiêng và thông báo trình duyệt'],
+  ['F7', 'MPU6050: rung/nghiêng, thông báo trình duyệt và Pushsafer'],
   ['F8', 'Website quản lý và trạng thái các kết nối'],
 ];
 
@@ -59,6 +59,7 @@ export function SystemStatusPanel({ health }) {
     ['Backend FastAPI', health?.backend ?? 'offline'],
     ['PostgreSQL', health?.database ?? 'offline'],
     ['ThingSpeak Cloud', health?.thingspeak ?? 'offline'],
+    ['Pushsafer', health?.pushsafer ?? 'not_configured'],
     ['MQTT Broker', health?.mqtt ?? 'offline'],
     ['ESP32 Main', health?.main_device ?? 'unknown'],
     ['System risk', health?.system ?? 'unknown'],

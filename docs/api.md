@@ -10,6 +10,7 @@ Base URL mặc định: `http://localhost:8000`.
   "database": "connected",
   "mqtt": "connected",
   "thingspeak": "connected",
+  "pushsafer": "ready",
   "main_device": "online",
   "f7_device": "unknown",
   "system": "danger",
@@ -21,6 +22,8 @@ Base URL mặc định: `http://localhost:8000`.
 ```
 
 `thingspeak` có thể là `ready`, `connected`, `rate_limited`, `disconnected` hoặc `not_configured`.
+
+`pushsafer` có thể là `ready`, `connected`, `disconnected`, `error` hoặc `not_configured`.
 
 ## `GET /api/readings?limit=20`
 

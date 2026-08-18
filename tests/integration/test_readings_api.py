@@ -27,6 +27,13 @@ def test_health_and_reading_flow() -> None:
             "rate_limited",
             "ready",
         }
+        assert health_data["pushsafer"] in {
+            "connected",
+            "disconnected",
+            "error",
+            "not_configured",
+            "ready",
+        }
         assert health_data["main_device"] in {"online", "offline", "unknown"}
         assert health_data["f7_device"] in {"online", "direct", "offline", "unknown"}
         assert health_data["system"] in {"safe", "warning", "danger", "unknown"}

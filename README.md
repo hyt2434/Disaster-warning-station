@@ -11,6 +11,7 @@ ESP32 → Mosquitto MQTT → FastAPI
                            ├── PostgreSQL
                            ├── ThingSpeak Cloud
                            ├── mô hình AI
+                           ├── Pushsafer notification
                            └── lệnh điều khiển buzzer
 
 React local → FastAPI REST API → PostgreSQL
@@ -21,7 +22,7 @@ React local → FastAPI REST API → PostgreSQL
 - PostgreSQL lưu thiết bị và lịch sử dữ liệu từ REST API lẫn MQTT.
 - MQTT nhận telemetry từ ESP32.
 - ThingSpeak lưu dữ liệu Cloud và cung cấp lịch sử để retrain AI.
-- Push notification chưa được triển khai; `AlertService` hiện vẫn là khung.
+- Pushsafer gửi thông báo khi Main hoặc F7 chuyển sang `WARNING`/`DANGER`.
 
 Đây là đồ án demo local, chưa có cấu hình triển khai production.
 
@@ -51,6 +52,8 @@ DATABASE_URL=postgresql://<user>:<password>@localhost:5432/<database>
 THINGSPEAK_WRITE_API_KEY=<write_api_key>
 THINGSPEAK_CHANNEL_ID=<channel_id>
 THINGSPEAK_READ_API_KEY=<read_api_key_if_private>
+PUSHSAFER_PRIVATE_KEY=<private_key>
+PUSHSAFER_DEVICE_ID=a
 ```
 
 PostgreSQL lưu toàn bộ telemetry để website đọc. ThingSpeak nhận tối đa một mẫu mỗi 15 giây. Script `python ai/retrain.py` tải Field 1–4 từ ThingSpeak và chỉ train khi có ít nhất 100 mẫu hợp lệ.
@@ -108,12 +111,13 @@ npm run build
 - [Firmware ESP32](docs/firmware.md)
 - [MQTT topics và payload](docs/mqtt-contract.md)
 - [Cài đặt MQTT local](docs/mqtt-local-setup.md)
+- [Cài đặt ThingSpeak và Pushsafer](docs/cloud-notifications-setup.md)
 - [Hướng dẫn setup demo](docs/demo-setup.md)
 
 ## Trạng thái cần hoàn thiện
 
 - ThingSpeak Cloud và model AI đã được tích hợp vào luồng MQTT.
-- Push notification chưa có implementation.
+- Pushsafer đã được tích hợp; cần điền Private Key và Device ID trong `.env`.
 - Topic MQTT của firmware và backend đã được đồng bộ về root `disaster/`.
 - Telemetry MQTT từ Main được lưu vào PostgreSQL, gửi lên ThingSpeak và đi qua AI.
 - ThingSpeak dùng Field 1–6 cho nhiệt độ, độ ẩm, gas, nước, motion và system.

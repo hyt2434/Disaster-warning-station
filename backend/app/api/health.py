@@ -3,7 +3,7 @@ from fastapi import APIRouter
 from ..database import database_is_available
 from ..mqtt import mqtt_client
 from ..schemas import HealthResponse
-from ..services import thingspeak_client
+from ..services import alert_service, thingspeak_client
 
 router = APIRouter(prefix="/api", tags=["System"])
 
@@ -15,6 +15,7 @@ def health_check() -> HealthResponse:
         database="connected" if database_is_available() else "disconnected",
         mqtt="connected" if mqtt_client.is_connected else "disconnected",
         thingspeak=thingspeak_client.status,
+        pushsafer=alert_service.status,
         main_device=mqtt_client.main_status,
         f7_device=mqtt_client.f7_status,
         system=mqtt_client.system_state,

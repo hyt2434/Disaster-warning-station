@@ -6,6 +6,7 @@ class HealthResponse(BaseModel):
     database: str
     mqtt: str
     thingspeak: str
+    pushsafer: str
     main_device: str
     f7_device: str
     system: str

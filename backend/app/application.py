@@ -22,7 +22,7 @@ async def lifespan(_: FastAPI):
         logger.warning("Database is not ready: %s", error)
 
     mqtt_client.connect()
-    logger.info("Backend started; MQTT and ThingSpeak integration are ready.")
+    logger.info("Backend started; MQTT, ThingSpeak and Pushsafer are ready.")
 
     try:
         yield

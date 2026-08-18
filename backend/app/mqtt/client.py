@@ -13,7 +13,7 @@ from ..config import settings
 from ..database import SessionLocal
 from ..database.repository import create_reading
 from ..schemas import SensorReadingCreate
-from ..services import thingspeak_client
+from ..services import alert_service, thingspeak_client
 from .topics import (
     BACKEND_STATUS_TOPIC,
     BUZZER_STATE_TOPIC,
@@ -407,6 +407,19 @@ class MQTTClient:
         thingspeak_client.upload(sensor_record)
         self._run_ai_prediction(sensor_record)
 
+        system_status = str(sensor_record["system_status"]).upper()
+        alert_message = (
+            f"ESP32 Main báo {system_status}. "
+            f"Nhiệt độ: {sensor_record['temperature']} °C, "
+            f"gas: {sensor_record['gas_filtered']}, "
+            f"mực nước: {sensor_record['water_level_cm']} cm."
+        )
+        alert_service.notify_if_needed(
+            source="main_station",
+            current_status=system_status,
+            message=alert_message,
+        )
+
     def _handle_f7_telemetry(self, payload: str) -> None:
         data = json.loads(payload)
         self._latest_f7 = {
@@ -420,6 +433,19 @@ class MQTTClient:
             "received_at": datetime.now(timezone.utc),
         }
         self._f7_status = "online"
+
+        f7_status = str(self._latest_f7["status"]).upper()
+        alert_message = (
+            f"ESP32 F7 báo {f7_status}. "
+            f"Độ nghiêng: {self._latest_f7['tilt']}, "
+            f"rung: {self._latest_f7['vibration']}, "
+            f"va chạm: {self._latest_f7['impact']}."
+        )
+        alert_service.notify_if_needed(
+            source="f7_station",
+            current_status=f7_status,
+            message=alert_message,
+        )
 
     def _on_message(
         self,

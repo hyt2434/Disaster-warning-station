@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     thingspeak_channel_id: str = ""
     thingspeak_read_api_key: str = ""
 
+    pushsafer_private_key: str = ""
+    pushsafer_device_id: str = "a"
+
     @property
     def allowed_origins(self) -> list[str]:
         return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
