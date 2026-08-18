@@ -37,3 +37,6 @@ Thumbs.db
 *.sqlite
 *.db
 *.db-journal
+
+# Generated AI model artifacts
+*.pkl

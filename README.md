@@ -33,7 +33,6 @@ Disaster-warning-station/
 ├── frontend/         React + Vite dashboard
 ├── firmware/         Firmware hai ESP32 và công cụ kiểm tra kết nối
 ├── ai/               Script huấn luyện, đánh giá và retrain mô hình
-├── models/           Model sinh ra khi chạy script train từ thư mục gốc
 ├── infrastructure/   PostgreSQL schema và Mosquitto local
 ├── docs/             Tài liệu kỹ thuật còn sử dụng
 ├── tests/            Integration test
@@ -41,7 +40,7 @@ Disaster-warning-station/
 └── README.md
 ```
 
-Backend tải model runtime từ `backend/app/ml_models/disaster_model.pkl`. Các bản model khác được giữ nguyên theo code vừa pull để phục vụ quá trình train/retrain.
+Các file model `*.pkl` là artifact được sinh khi train/retrain nên không lưu trong Git. Backend vẫn tìm model runtime tại `backend/app/ml_models/disaster_model.pkl`; cần sinh file này trên máy trước khi sử dụng chức năng dự đoán AI.
 
 ## Chạy PostgreSQL và backend
 
