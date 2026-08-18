@@ -1,10 +1,10 @@
 pandas
-numpy
-scikit-learn
-joblib
+numpy==2.5.1
+scikit-learn==1.9.0
+joblib==1.5.3
 matplotlib
 seaborn
 jupyter
 paho-mqtt==2.1.0
-pymongo==4.14.1
+pymongo==4.17.0
 python-dotenv==1.1.1
