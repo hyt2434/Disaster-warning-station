@@ -1,63 +1,47 @@
-import json
 import logging
-import os
 import threading
-from datetime import datetime, timezone
-from pathlib import Path
 
-import joblib
+import requests
+
+import os          
+import joblib      
 import numpy as np
+
+import json
+from datetime import datetime, timezone
+
 import paho.mqtt.client as mqtt
 
 from ..config import settings
 from ..database import SessionLocal
-from ..database.mongodb import mongo_store
 from ..database.repository import create_reading
 from ..schemas import SensorReadingCreate
 from .topics import (
     BACKEND_STATUS_TOPIC,
-    BUZZER_STATE_TOPIC,
     MAIN_STATUS_TOPIC,
     MAIN_TELEMETRY_TOPIC,
     COMMAND_BUZZER_TOPIC,
-    F7_STATUS_TOPIC,
-    F7_TELEMETRY_TOPIC,
 )
 
 
 logger = logging.getLogger("uvicorn.error")
 
-MODEL_PATH = Path(__file__).resolve().parent.parent / "ml_models" / "disaster_model.pkl"
-WATER_DANGER_DISTANCE_CM = 30.0
-WATER_DANGER_LEVEL_CM = 70.0
-
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "ml_models", "disaster_model.pkl")
 try:
     ai_model = joblib.load(MODEL_PATH)
-    logger.info("🧠 Đã tải mô hình AI vào backend từ: %s", MODEL_PATH)
-except FileNotFoundError:
-    logger.error("❌ Không tìm thấy file mô hình AI tại: %s", MODEL_PATH)
-    logger.error("Hãy chạy: python ai/train.py")
-    ai_model = None
-except Exception as error:
-    logger.error("❌ Không thể tải mô hình AI tại %s: %s", MODEL_PATH, error)
+    logger.info("🧠 Đã tải thành công 'Bộ não' AI vào Backend!")
+except Exception as e:
+    logger.error("❌ Không tìm thấy file mô hình AI: %s", e)
     ai_model = None
 
 class MQTTClient:
     def __init__(self) -> None:
         self._connected = threading.Event()
         self._loop_started = False
-        self._main_status = "unknown"
-        self._f7_status = "unknown"
-        self._buzzer_state = "unknown"
-        self._latest_f7: dict | None = None
-        self._latest_ai_prediction = "not_run" if ai_model is not None else "unavailable"
-
-        # PID giúp mỗi backend local có Client ID riêng, tránh "session taken over".
-        self._runtime_client_id = f"{settings.mqtt_client_id}-{os.getpid()}"
 
         self._client = mqtt.Client(
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-            client_id=self._runtime_client_id,
+            client_id=settings.mqtt_client_id,
             protocol=mqtt.MQTTv311,
         )
 
@@ -89,42 +73,14 @@ class MQTTClient:
     def is_connected(self) -> bool:
         return self._connected.is_set()
 
-    @property
-    def main_status(self) -> str:
-        return self._main_status
-
-    @property
-    def f7_status(self) -> str:
-        return self._f7_status
-
-    @property
-    def buzzer_state(self) -> str:
-        return self._buzzer_state
-
-    @property
-    def ai_status(self) -> str:
-        return "available" if ai_model is not None else "unavailable"
-
-    @property
-    def latest_ai_prediction(self) -> str:
-        return self._latest_ai_prediction
-
-    @property
-    def latest_f7(self) -> dict | None:
-        if self._latest_f7 is None:
-            return None
-
-        return self._latest_f7.copy()
-
     def connect(self) -> None:
         if self._loop_started:
             return
 
         logger.info(
-            "Connecting to MQTT broker at %s:%s with client ID %s",
+            "Connecting to MQTT broker at %s:%s",
             settings.mqtt_broker_host,
             settings.mqtt_broker_port,
-            self._runtime_client_id,
         )
 
         self._client.connect_async(
@@ -194,9 +150,6 @@ class MQTTClient:
             [
                 (MAIN_TELEMETRY_TOPIC, 1),
                 (MAIN_STATUS_TOPIC, 1),
-                (BUZZER_STATE_TOPIC, 1),
-                (F7_TELEMETRY_TOPIC, 1),
-                (F7_STATUS_TOPIC, 1),
             ],
         )
 
@@ -216,9 +169,6 @@ class MQTTClient:
         properties: mqtt.Properties | None,
     ) -> None:
         self._connected.clear()
-        self._main_status = "unknown"
-        self._f7_status = "unknown"
-        self._buzzer_state = "unknown"
 
         if reason_code.is_failure:
             logger.warning(
@@ -248,86 +198,23 @@ class MQTTClient:
             message.topic,
             payload,
         )
-
-        if message.topic == MAIN_STATUS_TOPIC:
-            self._main_status = payload.strip().lower()
-            return
-
-        if message.topic == F7_STATUS_TOPIC:
-            self._f7_status = payload.strip().lower()
-            return
-
-        if message.topic == BUZZER_STATE_TOPIC:
-            self._buzzer_state = payload.strip().lower()
-            return
-
-        if message.topic == F7_TELEMETRY_TOPIC:
-            try:
-                data = json.loads(payload)
-                self._latest_f7 = {
-                    "device_id": data.get("deviceId", "f7-station-01"),
-                    "roll": data.get("roll"),
-                    "pitch": data.get("pitch"),
-                    "tilt": data.get("tilt"),
-                    "vibration": data.get("vibration"),
-                    "impact": data.get("impact"),
-                    "status": data.get("status", "UNKNOWN").upper(),
-                    "received_at": datetime.now(timezone.utc),
-                }
-                self._f7_status = "online"
-            except (json.JSONDecodeError, TypeError, ValueError) as error:
-                logger.warning("F7 telemetry không hợp lệ: %s", error)
-            return
-
         if message.topic == MAIN_TELEMETRY_TOPIC:
             try:
                 # Chuyển đổi payload string thành dictionary
                 data = json.loads(payload)
-                self._main_status = "online"
-
-                if isinstance(data.get("buzzer"), bool):
-                    self._buzzer_state = "on" if data["buzzer"] else "off"
-
-                # Khi F7 mất Wi-Fi gia đình, nó gửi dữ liệu trực tiếp đến ESP32 Main.
-                # Main chuyển tiếp các giá trị này trong telemetry của chính nó.
-                if data.get("motionSource") == "DIRECT":
-                    self._latest_f7 = {
-                        "device_id": "f7-station-01",
-                        "roll": None,
-                        "pitch": None,
-                        "tilt": data.get("motionTilt"),
-                        "vibration": data.get("motionVibration"),
-                        "impact": data.get("motionImpact"),
-                        "status": data.get("motionStatus", "UNKNOWN").upper(),
-                        "received_at": datetime.now(timezone.utc),
-                    }
-                    self._f7_status = "direct"
                 
-                # Đọc payload mới; vẫn hỗ trợ tên cũ để demo không bị gián đoạn.
-                gas_raw = data.get("gasRaw", data.get("gas", data.get("smoke", 0)))
-                gas_filtered = data.get("gasFiltered", gas_raw)
-                distance_cm = data.get("distanceCm")
-                water_level_cm = data.get(
-                    "waterLevelCm",
-                    data.get("waterLevel", data.get("water", 0.0)),
-                )
-                water_level_percent = data.get("waterLevelPercent")
+                # Tạo bản ghi vớgi Time-Series tiêu chuẩn (UTC)
+                gas_value = data.get("gas", data.get("smoke", 0.0))
+                water_level = data.get("waterLevel", data.get("water", 0.0))
 
                 sensor_record = {
                     "timestamp": datetime.now(timezone.utc),
                     "device_id": data.get("deviceId", "main-station-01"),
                     "temperature": data.get("temperature", 0.0),
                     "humidity": data.get("humidity", 0.0),
-                    "gas_raw": gas_raw,
-                    "gas_filtered": gas_filtered,
-                    "distance_cm": distance_cm,
-                    "water_level_cm": water_level_cm,
-                    "water_level_percent": water_level_percent,
+                    "smoke_level": gas_value,
+                    "water_level": water_level,
                     "motion_status": data.get("motionStatus", "NORMAL"),
-                    "motion_source": data.get("motionSource", "NONE"),
-                    "motion_tilt": data.get("motionTilt"),
-                    "motion_vibration": data.get("motionVibration"),
-                    "motion_impact": data.get("motionImpact"),
                     "system_status": data.get("systemStatus", "NORMAL"),
                 }
 
@@ -344,12 +231,8 @@ class MQTTClient:
                             device_id=sensor_record["device_id"],
                             temperature=float(sensor_record["temperature"]),
                             humidity=float(sensor_record["humidity"]),
-                            gas_raw=sensor_record["gas_raw"],
-                            gas_filtered=sensor_record["gas_filtered"],
-                            distance_cm=sensor_record["distance_cm"],
-                            water_level_cm=sensor_record["water_level_cm"],
-                            water_level_percent=sensor_record["water_level_percent"],
-                            vibration=sensor_record["motion_vibration"],
+                            gas_raw=int(sensor_record["smoke_level"]),
+                            water_level_cm=float(sensor_record["water_level"]),
                             status=system_status,
                         ),
                     )
@@ -362,37 +245,43 @@ class MQTTClient:
                     )
                 finally:
                     database.close()
+
+                THINGSPEAK_URL = "https://api.thingspeak.com/update.json"
                 
-                # MongoDB là Cloud storage của hệ thống. Khi Atlas tạm mất,
-                # store giữ record trong RAM và tự đẩy bù sau khi reconnect.
-                if mongo_store.store(sensor_record):
-                    logger.info("Đã lưu telemetry lên MongoDB Cloud.")
-                else:
-                    logger.warning("Telemetry MongoDB đang chờ đồng bộ.")
-            
-                if ai_model is not None:
-                    # 1. Đưa số liệu vào mảng theo đúng thứ tự lúc train: [Nhiệt độ, Độ ẩm, Khói, Nước]
-                    # Model hiện được train với water là cờ 0/1.
-                    if distance_cm is not None:
-                        water_danger = (
-                            1.0
-                            if float(distance_cm) <= WATER_DANGER_DISTANCE_CM
-                            else 0.0
-                        )
-                    elif water_level_cm is not None:
-                        # Hỗ trợ bản ghi cũ chưa có distance_cm.
-                        water_danger = (
-                            1.0
-                            if float(water_level_cm) >= WATER_DANGER_LEVEL_CM
-                            else 0.0
-                        )
+                # Ánh xạ trạng thái chữ thành số nguyên để ThingSpeak vẽ biểu đồ
+                status_map = {"NORMAL": 0, "SAFE": 0, "WARNING": 1, "DANGER": 2}
+                mot_status_num = status_map.get(sensor_record["motion_status"].upper(), 0)
+                sys_status_num = status_map.get(sensor_record["system_status"].upper(), 0)
+
+                ts_payload = {
+                    "api_key": "66B5A8QBEOB5FQUK", # Write API Key của bạn
+                    "field1": sensor_record["temperature"],
+                    "field2": sensor_record["humidity"],
+                    "field3": sensor_record["smoke_level"],
+                    "field4": sensor_record["water_level"],
+                    "field5": mot_status_num,
+                    "field6": sys_status_num
+                }
+
+                try:
+                    ts_response = requests.post(THINGSPEAK_URL, data=ts_payload, timeout=5)
+                    # ThingSpeak trả về "0" nếu bị chặn do gọi quá nhanh (Rate limit 15s)
+                    if ts_response.status_code == 200 and ts_response.text != "0":
+                        logger.info("☁️ Đã đồng bộ dữ liệu lên ThingSpeak Cloud thành công!")
                     else:
-                        water_danger = 0.0
+                        logger.warning("⚠️ ThingSpeak từ chối dữ liệu (có thể do gửi quá nhanh, giới hạn 15s/lần).")
+                except requests.exceptions.RequestException as e:
+                    logger.error("❌ Không thể kết nối tới ThingSpeak Cloud: %s", e)
+
+                  # 1. Đưa số liệu vào mảng theo đúng thứ tự lúc train: [Nhiệt độ, Độ ẩm, Khói, Nước]
+                    # Model hiện được train với water là cờ 0/1.
+                if ai_model is not None:
+                    water_danger = 1.0 if water_level >= 40.0 else 0.0
 
                     input_features = np.array([[
                         sensor_record["temperature"],
                         sensor_record["humidity"],
-                        sensor_record["gas_filtered"],
+                        sensor_record["smoke_level"],
                         water_danger
                     ]])
                     
@@ -401,7 +290,6 @@ class MQTTClient:
                     
                     # 3. Ra quyết định
                     if prediction[0] == 1.0:
-                        self._latest_ai_prediction = "danger"
                         logger.warning("🚨 AI CẢNH BÁO NGUY HIỂM! Chuẩn bị bật còi báo động!")
                         # Publish lệnh ON xuống Topic của ESP32 để kích hoạt còi
                         client.publish(
@@ -410,7 +298,6 @@ class MQTTClient:
                             qos=1
                         )
                     else:
-                        self._latest_ai_prediction = "safe"
                         logger.info("✅ AI đánh giá: Môi trường an toàn.")
 
             except json.JSONDecodeError:
