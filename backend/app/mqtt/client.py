@@ -3,17 +3,14 @@ import logging
 import os
 import threading
 from datetime import datetime, timezone
-from pathlib import Path
 
-import joblib
-import numpy as np
 import paho.mqtt.client as mqtt
 
 from ..config import settings
 from ..database import SessionLocal
 from ..database.repository import create_reading
 from ..schemas import SensorReadingCreate
-from ..services import alert_service, thingspeak_client
+from ..services import ai_prediction_service, alert_service, thingspeak_client
 from .topics import (
     BACKEND_STATUS_TOPIC,
     BUZZER_STATE_TOPIC,
@@ -26,10 +23,7 @@ from .topics import (
 
 logger = logging.getLogger("uvicorn.error")
 
-MODEL_PATH = Path(__file__).resolve().parent.parent / "ml_models" / "disaster_model.pkl"
 SENSOR_HEIGHT_CM = 100.0
-WATER_DANGER_DISTANCE_CM = 30.0
-WATER_DANGER_LEVEL_CM = 70.0
 
 
 def first_available_value(
@@ -111,18 +105,6 @@ def normalize_main_telemetry(
     }
 
 
-try:
-    ai_model = joblib.load(MODEL_PATH)
-    logger.info("Đã tải mô hình AI từ: %s", MODEL_PATH)
-except FileNotFoundError:
-    logger.error("Không tìm thấy file mô hình AI tại: %s", MODEL_PATH)
-    logger.error("Hãy chạy: python ai/train.py")
-    ai_model = None
-except Exception as error:
-    logger.error("Không thể tải mô hình AI tại %s: %s", MODEL_PATH, error)
-    ai_model = None
-
-
 class MQTTClient:
     def __init__(self) -> None:
         self._connected = threading.Event()
@@ -133,7 +115,9 @@ class MQTTClient:
         self._buzzer_state = "unknown"
         self._buzzer_muted: bool | None = None
         self._latest_f7: dict | None = None
-        self._latest_ai_prediction = "not_run" if ai_model is not None else "unavailable"
+        self._latest_ai_prediction = (
+            "not_run" if ai_prediction_service.is_available else "unavailable"
+        )
 
         runtime_client_id = f"{settings.mqtt_client_id}-{os.getpid()}"
         self._client = mqtt.Client(
@@ -186,7 +170,7 @@ class MQTTClient:
 
     @property
     def ai_status(self) -> str:
-        return "available" if ai_model is not None else "unavailable"
+        return "available" if ai_prediction_service.is_available else "unavailable"
 
     @property
     def latest_ai_prediction(self) -> str:
@@ -340,43 +324,12 @@ class MQTTClient:
             database.close()
 
     def _run_ai_prediction(self, sensor_record: dict) -> None:
-        if ai_model is None:
-            return
-
-        temperature = sensor_record["temperature"]
-        humidity = sensor_record["humidity"]
-        gas_level = sensor_record["gas_filtered"]
-        distance_cm = sensor_record["distance_cm"]
-        water_level_cm = sensor_record["water_level_cm"]
-
-        if temperature is None or humidity is None or gas_level is None:
-            self._latest_ai_prediction = "insufficient_data"
-            return
-
-        if distance_cm is None and water_level_cm is None:
-            self._latest_ai_prediction = "insufficient_data"
-            return
-
-        if distance_cm is not None:
-            water_is_dangerous = float(distance_cm) <= WATER_DANGER_DISTANCE_CM
-        else:
-            water_is_dangerous = float(water_level_cm) >= WATER_DANGER_LEVEL_CM
-
-        model_input = np.array(
-            [[
-                float(temperature),
-                float(humidity),
-                float(gas_level),
-                1.0 if water_is_dangerous else 0.0,
-            ]]
+        self._latest_ai_prediction = ai_prediction_service.predict(
+            temperature=sensor_record["temperature"],
+            humidity=sensor_record["humidity"],
+            gas_level=sensor_record["gas_filtered"],
+            water_level_cm=sensor_record["water_level_cm"],
         )
-
-        try:
-            prediction = ai_model.predict(model_input)
-            self._latest_ai_prediction = "danger" if prediction[0] == 1 else "safe"
-        except Exception:
-            self._latest_ai_prediction = "not_run"
-            logger.exception("Không thể chạy dự đoán AI cho telemetry mới.")
 
     def _handle_main_telemetry(self, telemetry: dict) -> None:
         sensor_record = normalize_main_telemetry(telemetry)

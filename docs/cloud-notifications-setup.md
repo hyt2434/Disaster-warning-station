@@ -55,6 +55,14 @@ Invoke-RestMethod -Method Post -Uri "https://api.thingspeak.com/update.json" -Bo
 
 Nếu thành công, ThingSpeak trả về bản ghi mới. Nếu bị từ chối, kiểm tra Write API Key và chờ đủ 15 giây trước lần gửi tiếp theo.
 
+Frontend F5 không đọc API key trực tiếp. Backend dùng `Channel ID` và `Read API Key`
+để lấy 20 bản ghi gần nhất. Backend ước lượng dữ liệu sau 5 phút, đưa Field 1–4
+vào model AI và kiểm tra trạng thái chuyển động ở Field 5. Frontend chỉ hiện dự đoán
+toàn hệ thống và các dữ liệu có khả năng gây `WARNING` hoặc `DANGER`.
+
+Frontend F4 dùng cùng dữ liệu Cloud để vẽ biểu đồ lịch sử Field 1–6. ESP32 và monitor
+local cập nhật mỗi 2 giây; biểu đồ ThingSpeak cập nhật khoảng 15 giây/lần theo giới hạn Cloud.
+
 ## 2. Pushsafer
 
 ### Tạo tài khoản và đăng ký điện thoại

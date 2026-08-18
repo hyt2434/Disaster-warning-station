@@ -149,6 +149,7 @@ const float WATER_DANGER_CM = 70.0;
 // 6. TIMING
 // ============================================================
 
+// Read local sensors and publish their latest values every 2 seconds.
 const unsigned long SENSOR_INTERVAL_MS = 2000;
 const unsigned long TELEMETRY_INTERVAL_MS = 2000;
 const unsigned long MOTION_TIMEOUT_MS = 4000;
@@ -501,6 +502,7 @@ void handleBuzzerCommand(String message)
   message.toUpperCase();
 
   // OFF means: mute only the CURRENT DANGER event.
+  // This command never changes systemLevel or the warning LEDs.
   if (message == "OFF")
   {
     if (isDangerAlarmActive())
@@ -523,6 +525,7 @@ void handleBuzzerCommand(String message)
 
   // ON means: cancel the mute / acknowledge override.
   // It does NOT force the buzzer ON while the system is SAFE.
+  // This command also never changes systemLevel or the warning LEDs.
   if (message == "ON")
   {
     buzzerMuted = false;

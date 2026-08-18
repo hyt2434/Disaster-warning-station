@@ -1,4 +1,12 @@
-from backend.app.services.thingspeak import build_thingspeak_payload
+from datetime import datetime, timedelta, timezone
+
+from backend.app.services.thingspeak import (
+    build_system_prediction,
+    build_thingspeak_payload,
+    calculate_five_minute_values,
+    normalize_thingspeak_history,
+)
+from backend.app.services.ai_prediction import ai_prediction_service
 from ai.retrain import prepare_training_data
 
 
@@ -71,3 +79,80 @@ def test_ai_training_reads_thingspeak_field_mapping() -> None:
     ]
     assert len(features) == 100
     assert labels.iloc[-1] == 1
+
+
+def test_future_value_estimation_reads_all_six_thingspeak_fields() -> None:
+    start_time = datetime(2026, 8, 19, 10, 0, tzinfo=timezone.utc)
+    feeds = []
+
+    for index in range(20):
+        feeds.append({
+            "created_at": (start_time + timedelta(seconds=index * 15)).isoformat(),
+            "field1": str(30 + index * 0.1),
+            "field2": "70",
+            "field3": str(1000 + index * 5),
+            "field4": str(50 + index * 0.1),
+            "field5": "0",
+            "field6": "0" if index < 10 else "1",
+        })
+
+    result = calculate_five_minute_values(feeds)
+
+    assert result["prediction_minutes"] == 5
+    assert result["sample_count"] == 20
+    assert len(result["fields"]) == 6
+    assert result["fields"][0]["predicted"] > 31.9
+    assert result["fields"][1]["predicted"] == 70
+    assert result["fields"][5]["predicted"] == 2
+
+
+def test_thingspeak_history_is_ready_for_frontend_chart() -> None:
+    feeds = [{
+        "created_at": "2026-08-19T10:00:00Z",
+        "field1": "31.5",
+        "field2": "70",
+        "field3": "1200",
+        "field4": "55",
+        "field5": "0",
+        "field6": "1",
+    }]
+
+    history = normalize_thingspeak_history(feeds)
+
+    assert history[0]["recorded_at"] == "2026-08-19T10:00:00Z"
+    assert history[0]["field1"] == 31.5
+    assert history[0]["field6"] == 1.0
+
+
+def test_future_values_are_sent_to_ai_and_warning_cause_is_explained(
+    monkeypatch,
+) -> None:
+    received_model_values = {}
+
+    def fake_model_prediction(**sensor_values) -> str:
+        received_model_values.update(sensor_values)
+        return "safe"
+
+    monkeypatch.setattr(ai_prediction_service, "predict", fake_model_prediction)
+
+    future_data = {
+        "source": "ThingSpeak",
+        "prediction_minutes": 5,
+        "sample_count": 20,
+        "fields": [
+            {"field": "field1", "predicted": 36.0},
+            {"field": "field2", "predicted": 70.0},
+            {"field": "field3", "predicted": 1100.0},
+            {"field": "field4", "predicted": 55.0},
+            {"field": "field5", "predicted": 0},
+            {"field": "field6", "predicted": 2},
+        ],
+    }
+
+    result = build_system_prediction(future_data)
+
+    assert received_model_values["temperature"] == 36.0
+    assert received_model_values["gas_level"] == 1100.0
+    assert result["system_prediction"] == "WARNING"
+    assert result["causes"][0]["sensor"] == "Nhiệt độ"
+    assert result["causes"][0]["level"] == "WARNING"

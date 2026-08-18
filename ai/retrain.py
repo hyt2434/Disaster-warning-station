@@ -98,6 +98,8 @@ def prepare_training_data(records: list[dict]) -> tuple[pd.DataFrame, pd.Series]
             f"(cần {MINIMUM_TRAINING_SAMPLES}, hiện có {len(data_frame)})."
         )
 
+    # Field 5 and Field 6 are statuses already calculated by the devices.
+    # Do not use them as AI inputs because Field 6 already contains the answer.
     temperature_is_dangerous = data_frame["temperature"] >= 40
     gas_is_dangerous = data_frame["gas_filtered"] >= GAS_DANGER_THRESHOLD
     water_is_dangerous = data_frame["water_level_cm"] >= WATER_DANGER_LEVEL_CM

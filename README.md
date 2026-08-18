@@ -22,6 +22,7 @@ React local → FastAPI REST API → PostgreSQL
 - PostgreSQL lưu thiết bị và lịch sử dữ liệu từ REST API lẫn MQTT.
 - MQTT nhận telemetry từ ESP32.
 - ThingSpeak lưu dữ liệu Cloud và cung cấp lịch sử để retrain AI.
+- Frontend lấy lịch sử ThingSpeak về và hiển thị biểu đồ Field 1–6 tại F4.
 - Pushsafer gửi thông báo khi Main hoặc F7 chuyển sang `WARNING`/`DANGER`.
 
 Đây là đồ án demo local, chưa có cấu hình triển khai production.
@@ -57,6 +58,8 @@ PUSHSAFER_DEVICE_ID=a
 ```
 
 PostgreSQL lưu toàn bộ telemetry để website đọc. ThingSpeak nhận tối đa một mẫu mỗi 15 giây. Script `python ai/retrain.py` tải Field 1–4 từ ThingSpeak và chỉ train khi có ít nhất 100 mẫu hợp lệ.
+
+Frontend F5 gọi backend để đọc 20 bản ghi gần nhất trên ThingSpeak. Backend ước lượng dữ liệu sau 5 phút, đưa Field 1–4 vào model Random Forest và kiểm tra Field 5 cho chuyển động. Frontend chỉ hiển thị kết luận toàn hệ thống cùng dữ liệu gây `WARNING`/`DANGER`. Field 6 không dùng làm đầu vào vì đây là trạng thái hệ thống đã được thiết bị tính.
 
 Chạy backend:
 

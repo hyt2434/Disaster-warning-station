@@ -57,6 +57,67 @@ Body tối thiểu:
 `distance_cm` và `water_level_cm` nhận `null` khi JSN-SR04T không có echo. `status`,
 `buzzer` và `buzzer_muted` độc lập với nhau, vì vậy DANGER + buzzer OFF + muted là hợp lệ.
 
+## `GET /api/readings/thingspeak-prediction`
+
+Backend tải tối đa 20 bản ghi ThingSpeak gần nhất, ước lượng các cảm biến sau 5 phút
+và đưa kết quả vào model AI:
+
+```json
+{
+  "source": "ThingSpeak",
+  "prediction_minutes": 5,
+  "sample_count": 20,
+  "system_prediction": "WARNING",
+  "model_result": "safe",
+  "model_available": true,
+  "causes": [
+    {
+      "field": "field3",
+      "sensor": "Khói / gas",
+      "level": "WARNING",
+      "predicted_value": 1450,
+      "unit": "ADC",
+      "threshold": 1300
+    }
+  ],
+  "predicted_fields": {
+    "field1": 32.4,
+    "field2": 70.0,
+    "field3": 1450,
+    "field4": 55.0,
+    "field5": 0,
+    "field6": 1
+  }
+}
+```
+
+`system_prediction` là `NORMAL`, `WARNING`, `DANGER` hoặc `INSUFFICIENT_DATA`.
+Field 6 không được đưa vào model vì nó đã chứa kết quả trạng thái do ESP32 tính.
+
+## `GET /api/readings/thingspeak-history`
+
+Trả tối đa 20 bản ghi gần nhất được đọc trực tiếp từ ThingSpeak để frontend F4 vẽ chart:
+
+```json
+{
+  "source": "ThingSpeak",
+  "sample_count": 20,
+  "readings": [
+    {
+      "recorded_at": "2026-08-19T10:00:00Z",
+      "field1": 31.5,
+      "field2": 70.0,
+      "field3": 1200.0,
+      "field4": 55.0,
+      "field5": 0.0,
+      "field6": 0.0
+    }
+  ]
+}
+```
+
+Frontend có thể chọn Field 1–6 trên cùng một biểu đồ time series.
+
 ## `POST /api/devices/main/buzzer`
 
 ```json

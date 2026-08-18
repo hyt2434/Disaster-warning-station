@@ -22,6 +22,14 @@ export function getReadings(limit = 20) {
   return request(`/api/readings?limit=${limit}`);
 }
 
+export function getThingSpeakPrediction() {
+  return request('/api/readings/thingspeak-prediction');
+}
+
+export function getThingSpeakHistory() {
+  return request('/api/readings/thingspeak-history');
+}
+
 export function createReading(payload) {
   return request('/api/readings', {
     method: 'POST',

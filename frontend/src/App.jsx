@@ -8,6 +8,7 @@ import { PredictionPanel } from './components/PredictionPanel';
 import { ReadingForm } from './components/ReadingForm';
 import { ReadingsTable } from './components/ReadingsTable';
 import { SystemStatusPanel } from './components/SystemStatusPanel';
+import { ThingSpeakHistoryChart } from './components/ThingSpeakHistoryChart';
 import { TopNavigation } from './components/TopNavigation';
 import {
   controlBuzzer,
@@ -15,9 +16,11 @@ import {
   getHealth,
   getLatestF7Reading,
   getReadings,
+  getThingSpeakPrediction,
+  getThingSpeakHistory,
 } from './services/api';
 
-const AUTO_REFRESH_INTERVAL_MS = 5000;
+const AUTO_REFRESH_INTERVAL_MS = 2000;
 
 function getErrorMessage(error, fallbackMessage) {
   if (error instanceof TypeError) {
@@ -31,6 +34,10 @@ export default function App() {
   const [health, setHealth] = useState(null);
   const [readings, setReadings] = useState([]);
   const [latestF7, setLatestF7] = useState(null);
+  const [cloudPrediction, setCloudPrediction] = useState(null);
+  const [predictionError, setPredictionError] = useState('');
+  const [cloudHistory, setCloudHistory] = useState(null);
+  const [historyError, setHistoryError] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [sendingCommand, setSendingCommand] = useState(false);
@@ -48,6 +55,32 @@ export default function App() {
       const nextHealth = await getHealth();
       setHealth(nextHealth);
       setLatestF7(await getLatestF7Reading());
+
+      try {
+        setCloudPrediction(await getThingSpeakPrediction());
+        setPredictionError('');
+      } catch (predictionRequestError) {
+        setCloudPrediction(null);
+        setPredictionError(
+          getErrorMessage(
+            predictionRequestError,
+            'Không thể dự đoán dữ liệu từ ThingSpeak.',
+          ),
+        );
+      }
+
+      try {
+        setCloudHistory(await getThingSpeakHistory());
+        setHistoryError('');
+      } catch (historyRequestError) {
+        setCloudHistory(null);
+        setHistoryError(
+          getErrorMessage(
+            historyRequestError,
+            'Không thể tải lịch sử từ ThingSpeak.',
+          ),
+        );
+      }
 
       if (nextHealth.database === 'connected') {
         setReadings(await getReadings());
@@ -143,15 +176,18 @@ export default function App() {
             </div>
           </div>
           <p className="function-note history-note">
-            Website đọc lịch sử từ PostgreSQL; backend đồng thời gửi dữ liệu cảm biến lên ThingSpeak mỗi 15 giây.
+            Monitor đọc dữ liệu PostgreSQL mỗi 2 giây. Biểu đồ dưới đây được tải trực tiếp từ ThingSpeak Cloud.
           </p>
+          <ThingSpeakHistoryChart
+            cloudHistory={cloudHistory}
+            historyError={historyError}
+          />
           {loading ? <div className="empty-state">Đang tải dữ liệu…</div> : <ReadingsTable readings={readings} />}
         </section>
 
         <PredictionPanel
-          readings={readings}
-          aiStatus={health?.ai}
-          aiPrediction={health?.ai_prediction}
+          cloudPrediction={cloudPrediction}
+          predictionError={predictionError}
         />
 
         <F7Panel latestF7={latestF7} connectionStatus={health?.f7_device} />

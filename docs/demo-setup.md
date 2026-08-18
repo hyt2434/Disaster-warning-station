@@ -13,7 +13,7 @@ Backend FastAPI
    ├── PostgreSQL: lưu đầy đủ để website đọc
    ├── ThingSpeak: lưu một mẫu mỗi 15 giây
    ├── Pushsafer: gửi khi trạng thái chuyển sang WARNING/DANGER
-   └── AI: dự đoán SAFE hoặc DANGER
+   └── AI: dùng dữ liệu ThingSpeak để dự đoán hệ thống sau 5 phút
         ↓ REST API
 Frontend React
 ```
@@ -37,7 +37,7 @@ Nếu ECHO của JSN-SR04T hoặc analog output của MQ-2 có thể đạt 5 V,
 
 ## 3. Logic cảm biến trên ESP32 Main
 
-ESP32 đọc cảm biến mỗi 2 giây.
+ESP32 đọc cảm biến và gửi telemetry mỗi 2 giây. Frontend cũng tải dữ liệu mới mỗi 2 giây.
 
 ### DHT11
 
