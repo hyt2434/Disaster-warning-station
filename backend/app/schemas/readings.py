@@ -13,7 +13,10 @@ class SensorReadingCreate(BaseModel):
     water_level_cm: float | None = Field(default=None, ge=0)
     water_level_percent: float | None = Field(default=None, ge=0, le=100)
     vibration: float | None = Field(default=None, ge=0)
+    motion_status: str | None = Field(default=None, max_length=30)
     status: str = Field(default="NORMAL", min_length=1, max_length=30)
+    buzzer: bool | None = None
+    buzzer_muted: bool | None = None
     recorded_at: datetime | None = None
 
 
@@ -30,5 +33,8 @@ class SensorReadingResponse(BaseModel):
     water_level_cm: float | None
     water_level_percent: float | None
     vibration: float | None
+    motion_status: str | None
     status: str
+    buzzer: bool | None
+    buzzer_muted: bool | None
     recorded_at: datetime

@@ -10,6 +10,17 @@ Lưu mã thiết bị, tên, loại, trạng thái online và lần xuất hiệ
 
 Lưu dữ liệu cảm biến theo thời gian. Các cột chưa dùng ở giao diện hiện tại vẫn được để `NULL` để có thể bổ sung MQTT/F6/F7 sau này mà không phải đổi bảng ngay.
 
+Các cột liên quan firmware Main mới:
+
+- `distance_cm`, `water_level_cm`: nullable khi JSN-SR04T không có echo;
+- `motion_status`: trạng thái chuyển động do Main nhận từ F7;
+- `status`: trạng thái nguy cơ tổng hợp SAFE/WARNING/DANGER;
+- `buzzer`: trạng thái vật lý thực tế của còi;
+- `buzzer_muted`: trạng thái tắt tiếng của alarm event hiện tại.
+
+Backend tự thêm ba cột `motion_status`, `buzzer`, `buzzer_muted` nếu bảng demo cũ chưa có.
+Dữ liệu cũ được giữ nguyên và nhận `NULL` ở các cột mới.
+
 Các index chính:
 
 - `device_id`

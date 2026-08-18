@@ -24,7 +24,10 @@ CREATE TABLE IF NOT EXISTS sensor_readings (
     angle_y DOUBLE PRECISION,
     vibration DOUBLE PRECISION,
     battery_percentage DOUBLE PRECISION,
+    motion_status VARCHAR(30),
     status VARCHAR(30) NOT NULL DEFAULT 'NORMAL',
+    buzzer BOOLEAN,
+    buzzer_muted BOOLEAN,
     recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

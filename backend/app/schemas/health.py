@@ -9,6 +9,8 @@ class HealthResponse(BaseModel):
     mongodb_pending: int
     main_device: str
     f7_device: str
+    system: str
     buzzer: str
+    buzzer_muted: bool | None
     ai: str
     ai_prediction: str

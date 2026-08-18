@@ -70,9 +70,9 @@ Hai firmware được upload riêng cho từng board. Các file trong `tools/` c
 | Chức năng | Thiết bị | Firmware xử lý |
 |---|---|---|
 | F1 | DHT11 | Nhiệt độ + độ ẩm |
-| F2 | Buzzer | AUTO local + MANUAL từ web/MQTT |
+| F2 | Buzzer | Tự động theo DANGER + mute sự kiện hiện tại từ web/MQTT |
 | F3 | MQ-2 | ADC raw + moving average + trạng thái gas |
-| F6 | JSN-SR04T + LED | Khoảng cách -> mực nước -> 4 cấp LED |
+| F6 | JSN-SR04T + LED | Khoảng cách -> mực nước -> 3 cấp LED |
 | Network | Wi-Fi + MQTT | Telemetry, command, online/offline |
 
 ## 5. GPIO Main
@@ -101,14 +101,14 @@ Hai firmware được upload riêng cho từng board. Các file trong `tools/` c
 | Task | Chu kỳ |
 |---|---:|
 | DHT11 | 2000 ms |
-| MQ-2 | 150 ms |
-| JSN-SR04T | 500 ms |
+| MQ-2 | 2000 ms, lấy trung bình 5 mẫu mỗi lần đọc |
+| JSN-SR04T | 2000 ms |
 | LED | liên tục |
 | Buzzer | liên tục |
 | MQTT loop | liên tục |
 | Telemetry | 2000 ms |
 | MQTT retry | 5000 ms |
-| Wi-Fi retry | 10000 ms |
+| Wi-Fi reconnect | Do ESP32 tự xử lý |
 
 Firmware dùng `millis()` để scheduler các task. Không có `delay(5000)` hoặc vòng `while` reconnect làm đứng hệ thống.
 
@@ -125,12 +125,8 @@ DHT11
   +--> humidity
 ```
 
-Nếu đọc lỗi `NaN`:
-
-- không crash;
-- không overwrite giá trị hợp lệ cuối cùng;
-- trường `dhtLastReadValid = false` được gửi trong telemetry;
-- chu kỳ tiếp theo tự thử lại.
+Nếu đọc lỗi `NaN`, firmware không crash, tạm xếp mức nhiệt độ về `SAFE` cho bản demo
+và tự thử lại ở chu kỳ tiếp theo.
 
 ---
 
@@ -196,8 +192,10 @@ distance           = 65 cm
 waterLevel         = 35 cm
 ```
 
-Nếu không nhận được echo, firmware giữ trạng thái nước hợp lệ trước đó. Khoảng cách
-nhỏ hơn `23 cm` được clamp về `23 cm`, tương ứng mức nước tối đa đo được là `77 cm`.
+Nếu không nhận được echo, firmware đánh dấu phép đo không hợp lệ, tạm xếp cảm biến nước
+về `SAFE` cho bản demo và publish `distanceCm: null`, `waterLevelCm: null`. Giá trị `null`
+không được backend đổi thành `0`. Khoảng cách nhỏ hơn `23 cm` được clamp về `23 cm`,
+tương ứng mức nước tối đa đo được là `77 cm`.
 
 ### Trạng thái LED
 
@@ -228,38 +226,28 @@ thành chiều cao thật từ cảm biến xuống mốc `0 cm` của mô hình
 
 ---
 
-## 10. Logic buzzer
+## 10. Logic Alarm Event Mute
 
-Buzzer có hai nguồn yêu cầu:
-
-```text
-AUTO safety
-    OR
-MANUAL web command
-    |
-    v
-FINAL BUZZER STATE
-```
-
-Trong code:
-
-```cpp
-bool shouldBeOn = autoDanger() || manualBuzzerOn;
-```
-
-`autoDanger()` hiện được định nghĩa là:
+ESP32 Main quản lý độc lập ba trạng thái:
 
 ```text
-Gas == DANGER
-    OR
-Water == CRITICAL
+system        = mức nguy hiểm của cảm biến
+buzzer        = trạng thái vật lý thực tế của còi
+buzzerMuted   = người dùng đã tắt tiếng sự kiện hiện tại hay chưa
 ```
 
-Điều này có nghĩa:
+Quy tắc trong `updateBuzzer()`:
 
-- Website gửi `OFF` **không thể tắt một cảnh báo AUTO đang nguy hiểm**.
-- Khi gas/water về vùng an toàn và manual cũng OFF, buzzer tự tắt.
-- Mất Wi-Fi/MQTT không ảnh hưởng AUTO buzzer.
+```text
+SAFE                     -> buzzer OFF, reset buzzerMuted=false
+WARNING                  -> buzzer OFF, giữ nguyên buzzerMuted
+DANGER + buzzerMuted=false -> buzzer ON
+DANGER + buzzerMuted=true  -> buzzer OFF
+```
+
+Lệnh `OFF` chỉ đặt `buzzerMuted=true` khi hệ thống đang DANGER. Lệnh `OFF` lúc SAFE hoặc
+WARNING không tạo trạng thái tắt vĩnh viễn. Lệnh `ON` xóa mute; còi chỉ bật nếu hệ thống
+đang DANGER. Vì vậy telemetry DANGER lặp lại không thể tự bật lại còi sau khi người dùng mute.
 
 ---
 
@@ -278,7 +266,8 @@ ON
 OFF
 ```
 
-Code cũng chấp nhận `1/0` và `TRUE/FALSE`.
+Code cũng chấp nhận alias `MUTE/UNMUTE`, `1/0` và `TRUE/FALSE`, nhưng backend chỉ gửi
+`ON` hoặc `OFF`. Command không được publish retained.
 
 ### Publish telemetry
 
@@ -290,23 +279,20 @@ Ví dụ:
 
 ```json
 {
-  "deviceId": "main-station-01",
   "temperature": 30.2,
   "humidity": 68.0,
-  "gasRaw": 1125,
-  "gasFiltered": 1120,
+  "gas": 1120,
   "distanceCm": 65.4,
   "waterLevelCm": 34.6,
-  "waterLevelPercent": 34.6,
-  "motionStatus": "SAFE",
-  "motionSource": "MQTT",
-  "motionTilt": 1.2,
-  "motionVibration": 0.18,
-  "motionImpact": 0.42,
-  "systemStatus": "WARNING",
-  "buzzer": false
+  "motion": "SAFE",
+  "system": "DANGER",
+  "buzzer": false,
+  "buzzerMuted": true
 }
 ```
+
+`system=DANGER`, `buzzer=false`, `buzzerMuted=true` là trạng thái hợp lệ: môi trường vẫn
+nguy hiểm nhưng người dùng đã xác nhận và tắt âm thanh của sự kiện hiện tại.
 
 ### Publish buzzer state / ACK
 
@@ -314,18 +300,7 @@ Ví dụ:
 disaster/main/state/buzzer
 ```
 
-Ví dụ:
-
-```json
-{
-  "deviceId": "main-01",
-  "state": true,
-  "mode": "AUTO",
-  "reason": "GAS_DANGER",
-  "manualRequest": false,
-  "autoDanger": true
-}
-```
+Payload hiện tại là plain text `ON` hoặc `OFF`, biểu diễn đúng trạng thái vật lý của còi.
 
 Topic này được publish `retained`, nên backend/frontend có thể lấy trạng thái gần nhất.
 
@@ -604,13 +579,13 @@ Nếu không có auth, giữ `""`.
 
 ## 23. Test MQTT nhanh
 
-### Bật buzzer manual
+### Xóa mute và bật lại còi nếu hệ thống đang DANGER
 
 ```bash
 mosquitto_pub -h <BROKER_IP> -t disaster/main/command/buzzer -m ON
 ```
 
-### Tắt manual request
+### Tắt tiếng sự kiện DANGER hiện tại
 
 ```bash
 mosquitto_pub -h <BROKER_IP> -t disaster/main/command/buzzer -m OFF
@@ -698,8 +673,9 @@ GasState + WaterState
         |
         +------> MQTT telemetry
 
-MQTT command -> manualBuzzerOn
-AUTO OR MANUAL -> final buzzer
+MQTT command OFF -> mute the current DANGER event
+MQTT command ON  -> clear mute; buzzer sounds only while DANGER
+SAFE             -> clear mute for the next event
 ```
 
 ### F7

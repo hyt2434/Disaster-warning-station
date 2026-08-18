@@ -31,7 +31,7 @@ if hasattr(sys.stderr, "reconfigure"):
 
 def connect_to_cloud_collection() -> tuple[MongoClient, Collection]:
     mongo_uri = os.getenv("MONGODB_URI", "").strip()
-    database_name = os.getenv("MONGODB_DATABASE").strip()
+    database_name = os.getenv("MONGODB_DATABASE", "disaster_db").strip()
     collection_name = os.getenv("MONGODB_COLLECTION", "sensor_readings").strip()
 
     if not mongo_uri:
@@ -97,6 +97,8 @@ def prepare_training_data(records: list[dict]) -> tuple[pd.DataFrame, pd.Series]
             errors="coerce",
         )
 
+    # A missing water reading means "unknown", not zero water.
+    # For this demo, incomplete samples are skipped instead of inventing a value.
     data_frame = data_frame.dropna(subset=numeric_columns).copy()
 
     if len(data_frame) < MINIMUM_TRAINING_SAMPLES:

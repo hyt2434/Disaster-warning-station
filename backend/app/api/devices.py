@@ -30,6 +30,7 @@ def control_main_buzzer(command: BuzzerCommand) -> BuzzerCommandResponse:
             topic=BUZZER_COMMAND_TOPIC,
             payload=command.state,
             qos=1,
+            retain=False,
         )
     except ConnectionError as error:
         raise HTTPException(

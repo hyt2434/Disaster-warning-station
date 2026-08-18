@@ -7,7 +7,15 @@ function formatDate(value) {
 }
 
 function display(value, unit = '') {
-  return value === null ? '—' : `${value}${unit}`;
+  return value === null || value === undefined ? '—' : `${value}${unit}`;
+}
+
+function displayBooleanState(value, trueLabel, falseLabel) {
+  if (value === null || value === undefined) {
+    return '—';
+  }
+
+  return value ? trueLabel : falseLabel;
 }
 
 export function ReadingsTable({ readings }) {
@@ -31,6 +39,8 @@ export function ReadingsTable({ readings }) {
             <th>Gas</th>
             <th>Mực nước</th>
             <th>Trạng thái</th>
+            <th>Còi</th>
+            <th>Alarm</th>
           </tr>
         </thead>
         <tbody>
@@ -47,6 +57,8 @@ export function ReadingsTable({ readings }) {
                   {reading.status}
                 </span>
               </td>
+              <td>{displayBooleanState(reading.buzzer, 'ON', 'OFF')}</td>
+              <td>{displayBooleanState(reading.buzzer_muted, 'MUTED', 'READY')}</td>
             </tr>
           ))}
         </tbody>

@@ -156,6 +156,7 @@ function ModelStatus({ aiStatus, aiPrediction }) {
   const predictionLabels = {
     safe: 'AN TOÀN',
     danger: 'NGUY HIỂM',
+    insufficient_data: 'THIẾU DỮ LIỆU CẢM BIẾN',
     not_run: 'CHƯA NHẬN TELEMETRY',
     unavailable: 'KHÔNG CÓ MODEL',
   };

@@ -126,6 +126,7 @@ export default function App() {
 
         <DeviceControlPanel
           health={health}
+          latestReading={latest}
           sending={sendingCommand}
           onCommand={sendBuzzerCommand}
         />

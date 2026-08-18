@@ -10,7 +10,7 @@ const functions = [
 ];
 
 function getStatusTone(value) {
-  if (['online', 'connected', 'available', 'safe', 'off'].includes(value)) {
+  if (['online', 'connected', 'available', 'safe', 'normal', 'off', 'ready'].includes(value)) {
     return 'normal';
   }
 
@@ -18,7 +18,7 @@ function getStatusTone(value) {
     return 'danger';
   }
 
-  if (['warning', 'direct', 'not_run'].includes(value)) {
+  if (['warning', 'direct', 'not_run', 'insufficient_data', 'muted'].includes(value)) {
     return 'warning';
   }
 
@@ -29,13 +29,30 @@ function displayStatus(value) {
   const labels = {
     not_configured: 'CHƯA CẤU HÌNH',
     not_run: 'CHƯA DỰ ĐOÁN',
+    insufficient_data: 'THIẾU DỮ LIỆU',
+    muted: 'ĐÃ TẮT TIẾNG',
+    ready: 'CHƯA TẮT TIẾNG',
     unknown: 'CHƯA XÁC ĐỊNH',
   };
 
   return labels[value] ?? value?.toUpperCase() ?? 'OFFLINE';
 }
 
+function getMuteState(buzzerMuted) {
+  if (buzzerMuted === true) {
+    return 'muted';
+  }
+
+  if (buzzerMuted === false) {
+    return 'ready';
+  }
+
+  return 'unknown';
+}
+
 export function SystemStatusPanel({ health }) {
+  const muteState = getMuteState(health?.buzzer_muted);
+
   const services = [
     ['Frontend website', 'online'],
     ['Backend FastAPI', health?.backend ?? 'offline'],
@@ -43,6 +60,9 @@ export function SystemStatusPanel({ health }) {
     ['MongoDB Cloud', health?.mongodb ?? 'offline'],
     ['MQTT Broker', health?.mqtt ?? 'offline'],
     ['ESP32 Main', health?.main_device ?? 'unknown'],
+    ['System risk', health?.system ?? 'unknown'],
+    ['Buzzer', health?.buzzer ?? 'unknown'],
+    ['Alarm mute', muteState],
     ['ESP32-C3 F7', health?.f7_device ?? 'unknown'],
     ['Mô hình AI', health?.ai ?? 'unavailable'],
   ];

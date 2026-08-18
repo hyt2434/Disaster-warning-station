@@ -529,7 +529,7 @@ This includes local sensor information and motion information received from C3.
 
 ---
 
-## Manual buzzer
+## Alarm Event Mute
 
 Web publishes:
 
@@ -549,6 +549,18 @@ or:
 ```text
 OFF
 ```
+
+Ý nghĩa:
+
+```text
+OFF trong DANGER -> mute sự kiện hiện tại, system vẫn DANGER
+ON trong DANGER  -> bỏ mute và bật lại còi
+OFF trong SAFE   -> không tạo mute cho tương lai
+SAFE             -> tự reset buzzerMuted=false
+```
+
+Backend không gửi lệnh retained. ESP32 Main là nguồn sự thật của `buzzer` và
+`buzzerMuted`; frontend không lưu trạng thái OFF trong localStorage.
 
 ---
 
@@ -1054,14 +1066,15 @@ Therefore, the LED represents the **overall system danger level**, not only one 
 |---|---|---|
 | `SAFE` / `NORMAL` | Green LED | OFF |
 | `WARNING` | Yellow LED | OFF |
-| `DANGER` | Red LED | ON |
+| `DANGER`, chưa mute | Red LED | ON |
+| `DANGER`, đã mute | Red LED | OFF |
 
 In the current simplified demo firmware:
 
 ```text
 SAFE    -> GREEN
 WARNING -> YELLOW
-DANGER  -> RED + BUZZER
+DANGER  -> RED; buzzer ON nếu alarm event chưa bị mute
 ```
 
 There is no red blinking state in this simple demo version.

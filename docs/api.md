@@ -10,7 +10,14 @@ Base URL mặc định: `http://localhost:8000`.
   "database": "connected",
   "mqtt": "connected",
   "mongodb": "connected",
-  "mongodb_pending": 0
+  "mongodb_pending": 0,
+  "main_device": "online",
+  "f7_device": "unknown",
+  "system": "danger",
+  "buzzer": "off",
+  "buzzer_muted": true,
+  "ai": "available",
+  "ai_prediction": "danger"
 }
 ```
 
@@ -34,11 +41,27 @@ Body tối thiểu:
   "temperature": 31.5,
   "humidity": 72.4,
   "gas_raw": 1380,
-  "water_level_cm": 8.2,
-  "status": "WARNING"
+  "distance_cm": null,
+  "water_level_cm": null,
+  "motion_status": "SAFE",
+  "status": "DANGER",
+  "buzzer": false,
+  "buzzer_muted": true
 }
 ```
 
 `temperature` và `humidity` là bắt buộc trong biểu mẫu giai đoạn 1. Backend tạo thiết bị nếu `device_id` chưa tồn tại và lưu thời gian UTC.
+
+`distance_cm` và `water_level_cm` nhận `null` khi JSN-SR04T không có echo. `status`,
+`buzzer` và `buzzer_muted` độc lập với nhau, vì vậy DANGER + buzzer OFF + muted là hợp lệ.
+
+## `POST /api/devices/main/buzzer`
+
+```json
+{ "state": "OFF" }
+```
+
+Backend publish plain text `ON` hoặc `OFF` đến `disaster/main/command/buzzer` với
+`retain=false`. API không chờ hoặc phụ thuộc database trước khi gửi command.
 
 Swagger UI: `http://localhost:8000/docs`.

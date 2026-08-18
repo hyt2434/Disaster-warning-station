@@ -73,10 +73,37 @@ function formatUpdateTime(dateValue) {
   }).format(new Date(dateValue));
 }
 
+function getBuzzerStatusLabel(buzzer) {
+  if (buzzer === true) {
+    return 'ĐANG BẬT';
+  }
+
+  if (buzzer === false) {
+    return 'ĐANG TẮT';
+  }
+
+  return 'CHƯA XÁC ĐỊNH';
+}
+
+function getMuteStatusLabel(buzzerMuted) {
+  if (buzzerMuted === true) {
+    return 'ĐÃ TẮT TIẾNG';
+  }
+
+  if (buzzerMuted === false) {
+    return 'CHƯA TẮT TIẾNG';
+  }
+
+  return 'CHƯA XÁC ĐỊNH';
+}
+
 export function AlarmMonitor({ latestReading, backendOnline }) {
   const alarmLevel = getAlarmLevel(latestReading, backendOnline);
   const content = alarmContent[alarmLevel];
   const sensorWarnings = latestReading ? findSensorWarnings(latestReading) : [];
+  const systemStatus = latestReading?.status ?? 'CHƯA XÁC ĐỊNH';
+  const buzzerStatus = getBuzzerStatusLabel(latestReading?.buzzer);
+  const muteStatus = getMuteStatusLabel(latestReading?.buzzer_muted);
 
   return (
     <section className={`alarm-monitor alarm-${alarmLevel}`} aria-live="polite">
@@ -111,8 +138,16 @@ export function AlarmMonitor({ latestReading, backendOnline }) {
           <strong>{formatUpdateTime(latestReading?.recorded_at)}</strong>
         </div>
         <div>
-          <span>Còi cảnh báo</span>
-          <strong>{alarmLevel === 'danger' ? 'CẦN BẬT' : 'SẴN SÀNG'}</strong>
+          <span>System Status</span>
+          <strong>{systemStatus}</strong>
+        </div>
+        <div>
+          <span>Buzzer State</span>
+          <strong>{buzzerStatus}</strong>
+        </div>
+        <div>
+          <span>Alarm Mute State</span>
+          <strong>{muteStatus}</strong>
         </div>
       </div>
     </section>

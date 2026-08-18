@@ -18,7 +18,9 @@ def health_check() -> HealthResponse:
         mongodb_pending=mongo_store.pending_count,
         main_device=mqtt_client.main_status,
         f7_device=mqtt_client.f7_status,
+        system=mqtt_client.system_state,
         buzzer=mqtt_client.buzzer_state,
+        buzzer_muted=mqtt_client.buzzer_muted,
         ai=mqtt_client.ai_status,
         ai_prediction=mqtt_client.latest_ai_prediction,
     )

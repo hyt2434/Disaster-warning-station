@@ -44,7 +44,10 @@ def create_reading(database: Session, payload: SensorReadingCreate) -> SensorRea
         water_level_cm=payload.water_level_cm,
         water_level_percent=payload.water_level_percent,
         vibration=payload.vibration,
+        motion_status=payload.motion_status.upper() if payload.motion_status else None,
         status=payload.status.upper(),
+        buzzer=payload.buzzer,
+        buzzer_muted=payload.buzzer_muted,
         recorded_at=payload.recorded_at or now,
     )
     database.add(reading)

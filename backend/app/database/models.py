@@ -43,7 +43,10 @@ class SensorReading(Base):
     angle_y: Mapped[float | None] = mapped_column(Float, nullable=True)
     vibration: Mapped[float | None] = mapped_column(Float, nullable=True)
     battery_percentage: Mapped[float | None] = mapped_column(Float, nullable=True)
+    motion_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="NORMAL")
+    buzzer: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    buzzer_muted: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     recorded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, index=True
     )
