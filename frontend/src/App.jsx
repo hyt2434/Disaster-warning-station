@@ -1,17 +1,23 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AlarmMonitor } from './components/AlarmMonitor';
+import { DeviceControlPanel } from './components/DeviceControlPanel';
+import { F7Panel } from './components/F7Panel';
 import { Header } from './components/Header';
-import { MetricCard } from './components/MetricCard';
+import { MonitoringFunctions } from './components/MonitoringFunctions';
+import { PredictionPanel } from './components/PredictionPanel';
 import { ReadingForm } from './components/ReadingForm';
 import { ReadingsTable } from './components/ReadingsTable';
+import { SystemStatusPanel } from './components/SystemStatusPanel';
 import { TopNavigation } from './components/TopNavigation';
-import { createReading, getHealth, getReadings } from './services/api';
+import {
+  controlBuzzer,
+  createReading,
+  getHealth,
+  getLatestF7Reading,
+  getReadings,
+} from './services/api';
 
 const AUTO_REFRESH_INTERVAL_MS = 5000;
-
-function valueOrDash(value, fractionDigits = 1) {
-  return value === null || value === undefined ? '—' : value.toFixed(fractionDigits);
-}
 
 function getErrorMessage(error, fallbackMessage) {
   if (error instanceof TypeError) {
@@ -21,35 +27,13 @@ function getErrorMessage(error, fallbackMessage) {
   return error instanceof Error ? error.message : fallbackMessage;
 }
 
-function getSensorTone(value, warningLevel, dangerLevel) {
-  if (value === null || value === undefined) {
-    return 'offline';
-  }
-
-  if (value >= dangerLevel) {
-    return 'danger';
-  }
-
-  if (value >= warningLevel) {
-    return 'warning';
-  }
-
-  return 'normal';
-}
-
-function toMeterPercent(value, maximumValue) {
-  if (value === null || value === undefined) {
-    return 0;
-  }
-
-  return (value / maximumValue) * 100;
-}
-
 export default function App() {
   const [health, setHealth] = useState(null);
   const [readings, setReadings] = useState([]);
+  const [latestF7, setLatestF7] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [sendingCommand, setSendingCommand] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
@@ -63,6 +47,7 @@ export default function App() {
     try {
       const nextHealth = await getHealth();
       setHealth(nextHealth);
+      setLatestF7(await getLatestF7Reading());
 
       if (nextHealth.database === 'connected') {
         setReadings(await getReadings());
@@ -106,6 +91,22 @@ export default function App() {
     }
   }
 
+  async function sendBuzzerCommand(state) {
+    setSendingCommand(true);
+    setError('');
+    setMessage('');
+
+    try {
+      const result = await controlBuzzer(state);
+      setMessage(`${result.message} Đang chờ ESP32 phản hồi trạng thái thực tế.`);
+      await loadDashboard(false);
+    } catch (requestError) {
+      setError(getErrorMessage(requestError, 'Không thể gửi lệnh điều khiển còi.'));
+    } finally {
+      setSendingCommand(false);
+    }
+  }
+
   const latest = readings[0];
   const backendOnline = health?.backend === 'online';
 
@@ -121,102 +122,52 @@ export default function App() {
 
         <AlarmMonitor latestReading={latest} backendOnline={backendOnline} />
 
-        <section className="section-block" id="monitoring" aria-labelledby="monitoring-title">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">Real-time monitoring</p>
-              <h2 id="monitoring-title">Dữ liệu cảm biến mới nhất</h2>
-            </div>
-            <span className={`reading-status status-${(latest?.status ?? 'offline').toLowerCase()}`}>
-              {latest?.status ?? 'NO DATA'}
-            </span>
-          </div>
-          <div className="metrics-grid">
-            <MetricCard
-              label="Nhiệt độ"
-              value={valueOrDash(latest?.temperature)}
-              unit="°C"
-              hint="DHT22 · Cảnh báo từ 40°C"
-              tone={getSensorTone(latest?.temperature, 40, 50)}
-              meter={toMeterPercent(latest?.temperature, 70)}
-            />
-            <MetricCard
-              label="Độ ẩm"
-              value={valueOrDash(latest?.humidity)}
-              unit="%"
-              hint="DHT22 · Độ ẩm môi trường"
-              tone={latest ? 'normal' : 'offline'}
-              meter={toMeterPercent(latest?.humidity, 100)}
-            />
-            <MetricCard
-              label="Khói / gas"
-              value={valueOrDash(latest?.gas_raw, 0)}
-              hint="MQ-2 · Cảnh báo từ 500"
-              tone={getSensorTone(latest?.gas_raw, 500, 700)}
-              meter={toMeterPercent(latest?.gas_raw, 1000)}
-            />
-            <MetricCard
-              label="Mực nước"
-              value={valueOrDash(latest?.water_level_cm)}
-              unit="cm"
-              hint="Siêu âm · Cảnh báo từ 25 cm"
-              tone={getSensorTone(latest?.water_level_cm, 25, 40)}
-              meter={toMeterPercent(latest?.water_level_cm, 50)}
-            />
-          </div>
-        </section>
+        <MonitoringFunctions latest={latest} />
 
-        <section className="content-grid">
-          <article className="section-block" id="system-status" aria-labelledby="system-title">
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">System flow</p>
-                <h2 id="system-title">Luồng hoạt động của hệ thống</h2>
-              </div>
-            </div>
-            <div className="system-flow">
-              <span>ESP32</span>
-              <strong>→</strong>
-              <span>MQTT</span>
-              <strong>→</strong>
-              <span>Backend</span>
-              <strong>→</strong>
-              <span>Database</span>
-              <strong>→</strong>
-              <span>Frontend</span>
-            </div>
-            <p className="flow-description">
-              Backend nhận telemetry từ ESP32, lưu vào PostgreSQL và MongoDB, sau đó frontend
-              đọc dữ liệu qua REST API để cập nhật monitor mỗi 5 giây.
-            </p>
-          </article>
-
-          <article className="section-block compact-section" id="add-reading" aria-labelledby="form-title">
-            <div className="section-heading">
-              <div>
-                <p className="eyebrow">Demo database</p>
-                <h2 id="form-title">Nhập dữ liệu thử</h2>
-              </div>
-            </div>
-            <p className="form-explanation">
-              Dùng biểu mẫu này khi chưa bật ESP32 nhưng vẫn muốn kiểm tra monitor.
-            </p>
-          </article>
-        </section>
-
-        <section className="section-block form-section" aria-label="Biểu mẫu nhập dữ liệu">
-          <ReadingForm saving={saving} onSubmit={saveReading} />
-        </section>
+        <DeviceControlPanel
+          health={health}
+          sending={sendingCommand}
+          onCommand={sendBuzzerCommand}
+        />
 
         <section className="section-block" id="history" aria-labelledby="history-title">
           <div className="section-heading">
             <div>
               <p className="eyebrow">Historical data</p>
-              <h2 id="history-title">20 bản ghi cảm biến gần nhất</h2>
+              <h2 id="history-title">Lịch sử dữ liệu PostgreSQL và MongoDB Cloud</h2>
             </div>
-            <span className="row-count">{readings.length} bản ghi</span>
+            <div className="heading-badges">
+              <span className="row-count">{readings.length} bản ghi</span>
+              <span className="function-badge">[F4]</span>
+            </div>
           </div>
+          <p className="function-note history-note">
+            Bảng đọc dữ liệu từ PostgreSQL; telemetry MQTT đồng thời được đồng bộ lên MongoDB Cloud khi đã cấu hình.
+          </p>
           {loading ? <div className="empty-state">Đang tải dữ liệu…</div> : <ReadingsTable readings={readings} />}
+        </section>
+
+        <PredictionPanel
+          readings={readings}
+          aiStatus={health?.ai}
+          aiPrediction={health?.ai_prediction}
+        />
+
+        <F7Panel latestF7={latestF7} connectionStatus={health?.f7_device} />
+
+        <SystemStatusPanel health={health} />
+
+        <section className="section-block form-section" id="add-reading" aria-labelledby="form-title">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Demo database</p>
+              <h2 id="form-title">Nhập dữ liệu thử</h2>
+            </div>
+          </div>
+          <p className="form-explanation">
+            Dùng biểu mẫu này khi chưa bật ESP32 nhưng vẫn muốn kiểm tra monitor và dự đoán.
+          </p>
+          <ReadingForm saving={saving} onSubmit={saveReading} />
         </section>
       </main>
 

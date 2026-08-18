@@ -1,3 +1,5 @@
+import { SENSOR_THRESHOLDS } from '../config/thresholds';
+
 const alarmContent = {
   normal: {
     title: 'HỆ THỐNG AN TOÀN',
@@ -20,15 +22,15 @@ const alarmContent = {
 function findSensorWarnings(reading) {
   const warnings = [];
 
-  if (reading.temperature >= 50) {
+  if (reading.temperature >= SENSOR_THRESHOLDS.temperature.danger) {
     warnings.push('Nhiệt độ cao');
   }
 
-  if (reading.gas_raw >= 700) {
+  if (reading.gas_raw >= SENSOR_THRESHOLDS.gas.danger) {
     warnings.push('Khói hoặc gas cao');
   }
 
-  if (reading.water_level_cm >= 40) {
+  if (reading.water_level_cm >= SENSOR_THRESHOLDS.water.danger) {
     warnings.push('Mực nước nguy hiểm');
   }
 
@@ -48,9 +50,9 @@ function getAlarmLevel(reading, backendOnline) {
   }
 
   const hasWarningValue =
-    reading.temperature >= 40 ||
-    reading.gas_raw >= 500 ||
-    reading.water_level_cm >= 25;
+    reading.temperature >= SENSOR_THRESHOLDS.temperature.warning ||
+    reading.gas_raw >= SENSOR_THRESHOLDS.gas.warning ||
+    reading.water_level_cm >= SENSOR_THRESHOLDS.water.warning;
 
   if (deviceStatus === 'warning' || hasWarningValue) {
     return 'warning';
@@ -93,6 +95,10 @@ export function AlarmMonitor({ latestReading, backendOnline }) {
             Nguyên nhân: <strong>{sensorWarnings.join(' · ')}</strong>
           </p>
         )}
+
+        <p className="alarm-function-note">
+          Tổng hợp từ [F1], [F3], [F6] và trạng thái chuyển động [F7] do ESP32 Main gửi lên.
+        </p>
       </div>
 
       <div className="alarm-summary">

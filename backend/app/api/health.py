@@ -16,4 +16,9 @@ def health_check() -> HealthResponse:
         mqtt="connected" if mqtt_client.is_connected else "disconnected",
         mongodb=mongo_store.status,
         mongodb_pending=mongo_store.pending_count,
+        main_device=mqtt_client.main_status,
+        f7_device=mqtt_client.f7_status,
+        buzzer=mqtt_client.buzzer_state,
+        ai=mqtt_client.ai_status,
+        ai_prediction=mqtt_client.latest_ai_prediction,
     )

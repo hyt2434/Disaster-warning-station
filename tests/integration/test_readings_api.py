@@ -26,6 +26,20 @@ def test_health_and_reading_flow() -> None:
             "not_configured",
         }
         assert health_data["mongodb_pending"] >= 0
+        assert health_data["main_device"] in {"online", "offline", "unknown"}
+        assert health_data["f7_device"] in {"online", "direct", "offline", "unknown"}
+        assert health_data["buzzer"] in {"on", "off", "unknown"}
+        assert health_data["ai"] in {"available", "unavailable"}
+        assert health_data["ai_prediction"] in {
+            "safe",
+            "danger",
+            "not_run",
+            "unavailable",
+        }
+
+        latest_f7 = client.get("/api/devices/f7/latest")
+        assert latest_f7.status_code == 200
+        assert latest_f7.json() is None
 
         empty_latest = client.get("/api/readings/latest")
         assert empty_latest.status_code == 200

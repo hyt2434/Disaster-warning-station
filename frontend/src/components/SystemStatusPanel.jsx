@@ -1,0 +1,83 @@
+const functions = [
+  ['F1', 'DHT11: theo dõi nhiệt độ và độ ẩm'],
+  ['F2', 'Website → MQTT → ESP32: điều khiển còi'],
+  ['F3', 'MQ-2: theo dõi khói và khí gas'],
+  ['F4', 'PostgreSQL lưu lịch sử; MongoDB lưu telemetry Cloud'],
+  ['F5', 'AI phân loại rủi ro và frontend dự đoán xu hướng'],
+  ['F6', 'JSN-SR04T: đo mực nước và cảnh báo ba LED'],
+  ['F7', 'MPU6050: rung/nghiêng và thông báo trình duyệt'],
+  ['F8', 'Website quản lý và trạng thái các kết nối'],
+];
+
+function getStatusTone(value) {
+  if (['online', 'connected', 'available', 'safe', 'off'].includes(value)) {
+    return 'normal';
+  }
+
+  if (['danger', 'on'].includes(value)) {
+    return 'danger';
+  }
+
+  if (['warning', 'direct', 'not_run'].includes(value)) {
+    return 'warning';
+  }
+
+  return 'offline';
+}
+
+function displayStatus(value) {
+  const labels = {
+    not_configured: 'CHƯA CẤU HÌNH',
+    not_run: 'CHƯA DỰ ĐOÁN',
+    unknown: 'CHƯA XÁC ĐỊNH',
+  };
+
+  return labels[value] ?? value?.toUpperCase() ?? 'OFFLINE';
+}
+
+export function SystemStatusPanel({ health }) {
+  const services = [
+    ['Frontend website', 'online'],
+    ['Backend FastAPI', health?.backend ?? 'offline'],
+    ['PostgreSQL', health?.database ?? 'offline'],
+    ['MongoDB Cloud', health?.mongodb ?? 'offline'],
+    ['MQTT Broker', health?.mqtt ?? 'offline'],
+    ['ESP32 Main', health?.main_device ?? 'unknown'],
+    ['ESP32-C3 F7', health?.f7_device ?? 'unknown'],
+    ['Mô hình AI', health?.ai ?? 'unavailable'],
+  ];
+
+  return (
+    <section className="section-block" id="system-status" aria-labelledby="system-status-title">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">Self-built management website</p>
+          <h2 id="system-status-title">Trạng thái hệ thống và chức năng</h2>
+        </div>
+        <span className="function-badge">[F8]</span>
+      </div>
+
+      <div className="system-status-grid">
+        {services.map(([label, value]) => (
+          <div className="system-status-item" key={label}>
+            <span>{label}</span>
+            <strong className={`text-${getStatusTone(value)}`}>{displayStatus(value)}</strong>
+          </div>
+        ))}
+      </div>
+
+      <div className="function-legend-section">
+        <p className="eyebrow">Function-ID reference</p>
+        <h3>Chú thích chức năng F1–F8</h3>
+        <div className="function-legend">
+          {functions.map(([functionId, description]) => (
+            <div key={functionId}>
+              <strong>[{functionId}]</strong>
+              <span>{description}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}

@@ -28,3 +28,14 @@ export function createReading(payload) {
     body: JSON.stringify(payload),
   });
 }
+
+export function getLatestF7Reading() {
+  return request('/api/devices/f7/latest');
+}
+
+export function controlBuzzer(state) {
+  return request('/api/devices/main/buzzer', {
+    method: 'POST',
+    body: JSON.stringify({ state }),
+  });
+}

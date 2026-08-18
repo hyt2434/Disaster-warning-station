@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import SQLAlchemyError
 
-from .api import health_router, readings_router
+from .api import devices_router, health_router, readings_router
 from .config import settings
 from .database import create_tables
 from .database.mongodb import mongo_store
@@ -49,3 +49,4 @@ app.add_middleware(
 
 app.include_router(health_router)
 app.include_router(readings_router)
+app.include_router(devices_router)

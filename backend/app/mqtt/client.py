@@ -17,9 +17,12 @@ from ..database.repository import create_reading
 from ..schemas import SensorReadingCreate
 from .topics import (
     BACKEND_STATUS_TOPIC,
+    BUZZER_STATE_TOPIC,
     MAIN_STATUS_TOPIC,
     MAIN_TELEMETRY_TOPIC,
     COMMAND_BUZZER_TOPIC,
+    F7_STATUS_TOPIC,
+    F7_TELEMETRY_TOPIC,
 )
 
 
@@ -37,6 +40,11 @@ class MQTTClient:
     def __init__(self) -> None:
         self._connected = threading.Event()
         self._loop_started = False
+        self._main_status = "unknown"
+        self._f7_status = "unknown"
+        self._buzzer_state = "unknown"
+        self._latest_f7: dict | None = None
+        self._latest_ai_prediction = "not_run" if ai_model is not None else "unavailable"
 
         self._client = mqtt.Client(
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
@@ -71,6 +79,33 @@ class MQTTClient:
     @property
     def is_connected(self) -> bool:
         return self._connected.is_set()
+
+    @property
+    def main_status(self) -> str:
+        return self._main_status
+
+    @property
+    def f7_status(self) -> str:
+        return self._f7_status
+
+    @property
+    def buzzer_state(self) -> str:
+        return self._buzzer_state
+
+    @property
+    def ai_status(self) -> str:
+        return "available" if ai_model is not None else "unavailable"
+
+    @property
+    def latest_ai_prediction(self) -> str:
+        return self._latest_ai_prediction
+
+    @property
+    def latest_f7(self) -> dict | None:
+        if self._latest_f7 is None:
+            return None
+
+        return self._latest_f7.copy()
 
     def connect(self) -> None:
         if self._loop_started:
@@ -149,6 +184,9 @@ class MQTTClient:
             [
                 (MAIN_TELEMETRY_TOPIC, 1),
                 (MAIN_STATUS_TOPIC, 1),
+                (BUZZER_STATE_TOPIC, 1),
+                (F7_TELEMETRY_TOPIC, 1),
+                (F7_STATUS_TOPIC, 1),
             ],
         )
 
@@ -168,6 +206,9 @@ class MQTTClient:
         properties: mqtt.Properties | None,
     ) -> None:
         self._connected.clear()
+        self._main_status = "unknown"
+        self._f7_status = "unknown"
+        self._buzzer_state = "unknown"
 
         if reason_code.is_failure:
             logger.warning(
@@ -197,10 +238,60 @@ class MQTTClient:
             message.topic,
             payload,
         )
+
+        if message.topic == MAIN_STATUS_TOPIC:
+            self._main_status = payload.strip().lower()
+            return
+
+        if message.topic == F7_STATUS_TOPIC:
+            self._f7_status = payload.strip().lower()
+            return
+
+        if message.topic == BUZZER_STATE_TOPIC:
+            self._buzzer_state = payload.strip().lower()
+            return
+
+        if message.topic == F7_TELEMETRY_TOPIC:
+            try:
+                data = json.loads(payload)
+                self._latest_f7 = {
+                    "device_id": data.get("deviceId", "f7-station-01"),
+                    "roll": data.get("roll"),
+                    "pitch": data.get("pitch"),
+                    "tilt": data.get("tilt"),
+                    "vibration": data.get("vibration"),
+                    "impact": data.get("impact"),
+                    "status": data.get("status", "UNKNOWN").upper(),
+                    "received_at": datetime.now(timezone.utc),
+                }
+                self._f7_status = "online"
+            except (json.JSONDecodeError, TypeError, ValueError) as error:
+                logger.warning("F7 telemetry không hợp lệ: %s", error)
+            return
+
         if message.topic == MAIN_TELEMETRY_TOPIC:
             try:
                 # Chuyển đổi payload string thành dictionary
                 data = json.loads(payload)
+                self._main_status = "online"
+
+                if isinstance(data.get("buzzer"), bool):
+                    self._buzzer_state = "on" if data["buzzer"] else "off"
+
+                # Khi F7 mất Wi-Fi gia đình, nó gửi dữ liệu trực tiếp đến ESP32 Main.
+                # Main chuyển tiếp các giá trị này trong telemetry của chính nó.
+                if data.get("motionSource") == "DIRECT":
+                    self._latest_f7 = {
+                        "device_id": "f7-station-01",
+                        "roll": None,
+                        "pitch": None,
+                        "tilt": data.get("motionTilt"),
+                        "vibration": data.get("motionVibration"),
+                        "impact": data.get("motionImpact"),
+                        "status": data.get("motionStatus", "UNKNOWN").upper(),
+                        "received_at": datetime.now(timezone.utc),
+                    }
+                    self._f7_status = "direct"
                 
                 # Tạo bản ghi với Time-Series tiêu chuẩn (UTC)
                 gas_value = data.get("gas", data.get("smoke", 0.0))
@@ -214,6 +305,10 @@ class MQTTClient:
                     "smoke_level": gas_value,
                     "water_level": water_level,
                     "motion_status": data.get("motionStatus", "NORMAL"),
+                    "motion_source": data.get("motionSource", "NONE"),
+                    "motion_tilt": data.get("motionTilt"),
+                    "motion_vibration": data.get("motionVibration"),
+                    "motion_impact": data.get("motionImpact"),
                     "system_status": data.get("systemStatus", "NORMAL"),
                 }
 
@@ -269,6 +364,7 @@ class MQTTClient:
                     
                     # 3. Ra quyết định
                     if prediction[0] == 1.0:
+                        self._latest_ai_prediction = "danger"
                         logger.warning("🚨 AI CẢNH BÁO NGUY HIỂM! Chuẩn bị bật còi báo động!")
                         # Publish lệnh ON xuống Topic của ESP32 để kích hoạt còi
                         client.publish(
@@ -277,6 +373,7 @@ class MQTTClient:
                             qos=1
                         )
                     else:
+                        self._latest_ai_prediction = "safe"
                         logger.info("✅ AI đánh giá: Môi trường an toàn.")
 
             except json.JSONDecodeError:

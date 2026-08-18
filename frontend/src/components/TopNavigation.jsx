@@ -1,9 +1,11 @@
 const menuItems = [
   { label: 'Tổng quan', target: '#overview' },
-  { label: 'Monitor', target: '#monitoring' },
-  { label: 'Lịch sử', target: '#history' },
-  { label: 'Nhập dữ liệu', target: '#add-reading' },
-  { label: 'Hệ thống', target: '#system-status' },
+  { label: 'Giám sát · F1/F3/F6', target: '#monitoring' },
+  { label: 'Điều khiển · F2', target: '#device-control' },
+  { label: 'Lịch sử · F4', target: '#history' },
+  { label: 'Dự đoán · F5', target: '#prediction' },
+  { label: 'Rung/nghiêng · F7', target: '#f7-monitoring' },
+  { label: 'Hệ thống · F8', target: '#system-status' },
 ];
 
 export function TopNavigation() {
