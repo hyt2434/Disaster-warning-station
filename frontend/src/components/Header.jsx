@@ -1,7 +1,7 @@
 export function Header({ health, onRefresh, refreshing }) {
   const databaseConnected = health?.database === 'connected';
   const mqttConnected = health?.mqtt === 'connected';
-  const mongodbConnected = health?.mongodb === 'connected';
+  const thingspeakReady = ['ready', 'connected'].includes(health?.thingspeak);
 
   return (
     <header className="overview-header" id="overview">
@@ -9,7 +9,7 @@ export function Header({ health, onRefresh, refreshing }) {
         <p className="eyebrow">IoT monitoring project</p>
         <h1>Disaster Warning System</h1>
         <p className="subtitle">
-          Theo dõi cảm biến ESP32, lưu dữ liệu PostgreSQL và MongoDB Cloud.
+          Theo dõi cảm biến ESP32, lưu PostgreSQL và đồng bộ ThingSpeak Cloud.
         </p>
       </div>
       <div className="header-actions">
@@ -19,9 +19,8 @@ export function Header({ health, onRefresh, refreshing }) {
         <span className={`connection-badge ${databaseConnected ? 'online' : 'offline'}`}>
           <span className="status-dot" /> PostgreSQL {databaseConnected ? 'CONNECTED' : 'DISCONNECTED'}
         </span>
-        <span className={`connection-badge ${mongodbConnected ? 'online' : 'offline'}`}>
-          <span className="status-dot" /> MongoDB {mongodbConnected ? 'CONNECTED' : 'DISCONNECTED'}
-          {health?.mongodb_pending > 0 ? ` · ${health.mongodb_pending} pending` : ''}
+        <span className={`connection-badge ${thingspeakReady ? 'online' : 'offline'}`}>
+          <span className="status-dot" /> ThingSpeak {thingspeakReady ? 'READY' : 'DISCONNECTED'}
         </span>
         <span className={`connection-badge ${mqttConnected ? 'online' : 'offline'}`}>
           <span className="status-dot" /> MQTT {mqttConnected ? 'CONNECTED' : 'DISCONNECTED'}

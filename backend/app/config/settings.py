@@ -26,9 +26,9 @@ class Settings(BaseSettings):
     mqtt_password: str = ""
     mqtt_client_id: str = "disaster-warning-backend"
 
-    mongodb_uri: str = ""
-    mongodb_database: str = "disaster_db"
-    mongodb_collection: str = "sensor_readings"
+    thingspeak_write_api_key: str = ""
+    thingspeak_channel_id: str = ""
+    thingspeak_read_api_key: str = ""
 
     @property
     def allowed_origins(self) -> list[str]:

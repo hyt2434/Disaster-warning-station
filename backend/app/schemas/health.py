@@ -5,8 +5,7 @@ class HealthResponse(BaseModel):
     backend: str
     database: str
     mqtt: str
-    mongodb: str
-    mongodb_pending: int
+    thingspeak: str
     main_device: str
     f7_device: str
     system: str

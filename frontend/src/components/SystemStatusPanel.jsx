@@ -2,7 +2,7 @@ const functions = [
   ['F1', 'DHT11: theo dõi nhiệt độ và độ ẩm'],
   ['F2', 'Website → MQTT → ESP32: điều khiển còi'],
   ['F3', 'MQ-2: theo dõi khói và khí gas'],
-  ['F4', 'PostgreSQL lưu lịch sử; MongoDB lưu telemetry Cloud'],
+  ['F4', 'PostgreSQL lưu lịch sử; ThingSpeak lưu dữ liệu Cloud'],
   ['F5', 'AI phân loại rủi ro và frontend dự đoán xu hướng'],
   ['F6', 'JSN-SR04T: đo mực nước và cảnh báo ba LED'],
   ['F7', 'MPU6050: rung/nghiêng và thông báo trình duyệt'],
@@ -18,7 +18,7 @@ function getStatusTone(value) {
     return 'danger';
   }
 
-  if (['warning', 'direct', 'not_run', 'insufficient_data', 'muted'].includes(value)) {
+  if (['warning', 'direct', 'not_run', 'insufficient_data', 'muted', 'rate_limited'].includes(value)) {
     return 'warning';
   }
 
@@ -28,6 +28,7 @@ function getStatusTone(value) {
 function displayStatus(value) {
   const labels = {
     not_configured: 'CHƯA CẤU HÌNH',
+    rate_limited: 'ĐỢI GIỚI HẠN 15 GIÂY',
     not_run: 'CHƯA DỰ ĐOÁN',
     insufficient_data: 'THIẾU DỮ LIỆU',
     muted: 'ĐÃ TẮT TIẾNG',
@@ -57,7 +58,7 @@ export function SystemStatusPanel({ health }) {
     ['Frontend website', 'online'],
     ['Backend FastAPI', health?.backend ?? 'offline'],
     ['PostgreSQL', health?.database ?? 'offline'],
-    ['MongoDB Cloud', health?.mongodb ?? 'offline'],
+    ['ThingSpeak Cloud', health?.thingspeak ?? 'offline'],
     ['MQTT Broker', health?.mqtt ?? 'offline'],
     ['ESP32 Main', health?.main_device ?? 'unknown'],
     ['System risk', health?.system ?? 'unknown'],

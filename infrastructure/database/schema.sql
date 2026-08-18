@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS sensor_readings (
     angle_y DOUBLE PRECISION,
     vibration DOUBLE PRECISION,
     battery_percentage DOUBLE PRECISION,
+
+    -- Trạng thái do ESP32 Main gửi trong mỗi telemetry.
     motion_status VARCHAR(30),
     status VARCHAR(30) NOT NULL DEFAULT 'NORMAL',
     buzzer BOOLEAN,

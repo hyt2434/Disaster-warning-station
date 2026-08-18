@@ -18,8 +18,9 @@ Các cột liên quan firmware Main mới:
 - `buzzer`: trạng thái vật lý thực tế của còi;
 - `buzzer_muted`: trạng thái tắt tiếng của alarm event hiện tại.
 
-Backend tự thêm ba cột `motion_status`, `buzzer`, `buzzer_muted` nếu bảng demo cũ chưa có.
-Dữ liệu cũ được giữ nguyên và nhận `NULL` ở các cột mới.
+Ba cột `motion_status`, `buzzer`, `buzzer_muted` đã có sẵn trong model và
+`infrastructure/database/schema.sql`. Bản demo mới tạo database từ đầu nên backend không chạy
+`ALTER TABLE` khi khởi động.
 
 Các index chính:
 

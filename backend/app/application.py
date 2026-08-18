@@ -8,7 +8,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from .api import devices_router, health_router, readings_router
 from .config import settings
 from .database import create_tables
-from .database.mongodb import mongo_store
 from .mqtt import mqtt_client
 
 
@@ -22,15 +21,13 @@ async def lifespan(_: FastAPI):
     except SQLAlchemyError as error:
         logger.warning("Database is not ready: %s", error)
 
-    mongo_store.connect()
     mqtt_client.connect()
-    logger.info("Backend started; MQTT connection is running in the background.")
+    logger.info("Backend started; MQTT and ThingSpeak integration are ready.")
 
     try:
         yield
     finally:
         mqtt_client.disconnect()
-        mongo_store.close()
 
 
 app = FastAPI(

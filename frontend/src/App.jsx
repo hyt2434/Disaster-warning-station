@@ -135,7 +135,7 @@ export default function App() {
           <div className="section-heading">
             <div>
               <p className="eyebrow">Historical data</p>
-              <h2 id="history-title">Lịch sử dữ liệu PostgreSQL và MongoDB Cloud</h2>
+              <h2 id="history-title">Lịch sử PostgreSQL và dữ liệu ThingSpeak</h2>
             </div>
             <div className="heading-badges">
               <span className="row-count">{readings.length} bản ghi</span>
@@ -143,7 +143,7 @@ export default function App() {
             </div>
           </div>
           <p className="function-note history-note">
-            Bảng đọc dữ liệu từ PostgreSQL; telemetry MQTT đồng thời được đồng bộ lên MongoDB Cloud khi đã cấu hình.
+            Website đọc lịch sử từ PostgreSQL; backend đồng thời gửi dữ liệu cảm biến lên ThingSpeak mỗi 15 giây.
           </p>
           {loading ? <div className="empty-state">Đang tải dữ liệu…</div> : <ReadingsTable readings={readings} />}
         </section>

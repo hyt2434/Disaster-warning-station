@@ -9,7 +9,7 @@ Hệ thống được phát triển để chạy local:
 ```text
 ESP32 → Mosquitto MQTT → FastAPI
                            ├── PostgreSQL
-                           ├── MongoDB Atlas
+                           ├── ThingSpeak Cloud
                            ├── mô hình AI
                            └── lệnh điều khiển buzzer
 
@@ -20,7 +20,7 @@ React local → FastAPI REST API → PostgreSQL
 - Backend FastAPI chạy tại `http://localhost:8000`.
 - PostgreSQL lưu thiết bị và lịch sử dữ liệu từ REST API lẫn MQTT.
 - MQTT nhận telemetry từ ESP32.
-- Code mới có tích hợp MongoDB Atlas và mô hình AI để đánh giá dữ liệu MQTT.
+- ThingSpeak lưu dữ liệu Cloud và cung cấp lịch sử để retrain AI.
 - Push notification chưa được triển khai; `AlertService` hiện vẫn là khung.
 
 Đây là đồ án demo local, chưa có cấu hình triển khai production.
@@ -29,7 +29,7 @@ React local → FastAPI REST API → PostgreSQL
 
 ```text
 Disaster-warning-station/
-├── backend/          FastAPI, PostgreSQL, MongoDB, MQTT và AI runtime
+├── backend/          FastAPI, PostgreSQL, ThingSpeak, MQTT và AI runtime
 ├── frontend/         React + Vite dashboard
 ├── firmware/         Firmware hai ESP32 và công cụ kiểm tra kết nối
 ├── ai/               Script huấn luyện, đánh giá và retrain mô hình
@@ -48,14 +48,12 @@ PostgreSQL local có thể được cài trực tiếp hoặc chạy bằng Dock
 
 ```dotenv
 DATABASE_URL=postgresql://<user>:<password>@localhost:5432/<database>
-MONGODB_URI=mongodb+srv://<user>:<password>@<cluster>/?appName=<app>
-MONGODB_DATABASE=disaster_db
-MONGODB_COLLECTION=sensor_readings
+THINGSPEAK_WRITE_API_KEY=<write_api_key>
+THINGSPEAK_CHANNEL_ID=<channel_id>
+THINGSPEAK_READ_API_KEY=<read_api_key_if_private>
 ```
 
-MongoDB Atlas là Cloud storage bắt buộc của demo. Nếu Atlas tạm mất kết nối, backend giữ tối đa 10.000 telemetry trong RAM và tự đẩy bù khi kết nối lại; PostgreSQL local vẫn giữ dữ liệu cho dashboard.
-
-Nếu `sensor_readings` chưa tồn tại, `python ai/retrain.py` sẽ tự tạo collection này. Model chỉ được huấn luyện sau khi collection có ít nhất 100 bản ghi hợp lệ.
+PostgreSQL lưu toàn bộ telemetry để website đọc. ThingSpeak nhận tối đa một mẫu mỗi 15 giây. Script `python ai/retrain.py` tải Field 1–4 từ ThingSpeak và chỉ train khi có ít nhất 100 mẫu hợp lệ.
 
 Chạy backend:
 
@@ -110,14 +108,14 @@ npm run build
 - [Firmware ESP32](docs/firmware.md)
 - [MQTT topics và payload](docs/mqtt-contract.md)
 - [Cài đặt MQTT local](docs/mqtt-local-setup.md)
-- [Hướng dẫn setup demo và fallback Wi-Fi](docs/demo-setup.md)
+- [Hướng dẫn setup demo](docs/demo-setup.md)
 
 ## Trạng thái cần hoàn thiện
 
-- MongoDB Atlas, model AI và logic suy luận MQTT đã được thêm trong hai commit mới nhất.
+- ThingSpeak Cloud và model AI đã được tích hợp vào luồng MQTT.
 - Push notification chưa có implementation.
 - Topic MQTT của firmware và backend đã được đồng bộ về root `disaster/`.
-- Telemetry MQTT từ Main được lưu vào PostgreSQL để dashboard đọc, đồng thời vẫn đi qua MongoDB/AI.
-- Các dependency MongoDB/AI đã được thêm vào `backend/requirements.txt`.
+- Telemetry MQTT từ Main được lưu vào PostgreSQL, gửi lên ThingSpeak và đi qua AI.
+- ThingSpeak dùng Field 1–6 cho nhiệt độ, độ ẩm, gas, nước, motion và system.
 - Model `*.pkl` được tạo local và bị Git ignore; AI tạm bỏ qua dự đoán nếu chưa có model runtime.
-- MongoDB đọc credential từ `.env`; không lưu URI hoặc mật khẩu Cloud trong source.
+- ThingSpeak API key được đọc từ `.env`, không lưu trong source được commit.

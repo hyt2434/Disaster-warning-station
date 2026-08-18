@@ -20,12 +20,13 @@ def test_health_and_reading_flow() -> None:
         assert health_data["backend"] == "online"
         assert health_data["database"] == "connected"
         assert health_data["mqtt"] in {"connected", "disconnected"}
-        assert health_data["mongodb"] in {
+        assert health_data["thingspeak"] in {
             "connected",
             "disconnected",
             "not_configured",
+            "rate_limited",
+            "ready",
         }
-        assert health_data["mongodb_pending"] >= 0
         assert health_data["main_device"] in {"online", "offline", "unknown"}
         assert health_data["f7_device"] in {"online", "direct", "offline", "unknown"}
         assert health_data["system"] in {"safe", "warning", "danger", "unknown"}

@@ -208,16 +208,16 @@ F7 gửi trạng thái cần thiết qua `disaster/f7/state` để ESP32 Main t�
 
 Backend đổi tên camelCase từ ESP32 sang snake_case khi lưu:
 
-| ESP32 | PostgreSQL / MongoDB |
-|---|---|
-| `distanceCm` | `distance_cm` |
-| `waterLevelCm` | `water_level_cm` |
-| `motion` | `motion_status` |
-| `system` | `system_status` hoặc `status` trong API |
-| `buzzer` | `buzzer` |
-| `buzzerMuted` | `buzzer_muted` |
+| ESP32 | PostgreSQL | ThingSpeak |
+|---|---|---|
+| `distanceCm` | `distance_cm` | Không gửi |
+| `waterLevelCm` | `water_level_cm` | Field 4 |
+| `motion` | `motion_status` | Field 5: SAFE=0, WARNING=1, DANGER=2 |
+| `system` | `status` | Field 6: SAFE=0, WARNING=1, DANGER=2 |
+| `buzzer` | `buzzer` | Không gửi |
+| `buzzerMuted` | `buzzer_muted` | Không gửi |
 
-MongoDB lưu cùng một bản ghi chuẩn hóa với timestamp. Nếu PostgreSQL hoặc MongoDB tạm thời lỗi, backend vẫn phải tiếp tục nhận MQTT và gửi lệnh điều khiển; lỗi lưu dữ liệu không được làm hỏng luồng điều khiển.
+ThingSpeak còn dùng Field 1 cho nhiệt độ, Field 2 cho độ ẩm và Field 3 cho gas. Backend giới hạn một lần gửi mỗi 15 giây. Nếu PostgreSQL hoặc ThingSpeak lỗi, MQTT control vẫn hoạt động độc lập.
 
 ## 10. Quy tắc cho AI
 
@@ -243,6 +243,6 @@ Nếu dữ liệu nước là `null`, backend bỏ qua lần dự đoán đó v�
 5. `DANGER -> WARNING -> DANGER` khi chưa về `SAFE` -> mute vẫn được giữ.
 6. `DANGER -> SAFE -> DANGER` -> mute được xóa ở `SAFE`, sự kiện mới bật còi.
 7. Nhấn `ON` khi `SAFE` -> xóa mute nhưng không bật còi.
-8. Cảm biến nước lỗi -> API, PostgreSQL và MongoDB giữ giá trị `null`.
+8. Cảm biến nước lỗi -> API và PostgreSQL giữ `null`; backend bỏ qua Field 4 khi gửi ThingSpeak.
 
 Đây là contract hiện tại. Nếu thay đổi tên trường hoặc topic, phải cập nhật đồng thời firmware, backend, frontend và tài liệu này.
