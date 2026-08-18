@@ -738,6 +738,21 @@ h2 {
   margin: -4px 0 16px;
 }
 
+.cloud-data-section,
+.prediction-panel {
+  font-size: 0.9rem;
+}
+
+.cloud-data-section .section-heading h2,
+.prediction-panel .section-heading h2 {
+  font-size: 1.2rem;
+}
+
+.history-subtitle {
+  margin: 14px 0 9px;
+  font-size: 0.92rem;
+}
+
 .thingspeak-history-chart {
   margin-bottom: 18px;
   padding: 14px;
@@ -766,7 +781,7 @@ h2 {
 .cloud-chart-header > div strong {
   margin-top: 5px;
   display: block;
-  font-size: 1.35rem;
+  font-size: 1.15rem;
 }
 
 .cloud-chart-header select {
@@ -781,7 +796,7 @@ h2 {
 
 .thingspeak-history-chart svg {
   width: 100%;
-  min-height: 230px;
+  min-height: 200px;
   display: block;
   background:
     linear-gradient(#edf1f6 1px, transparent 1px),
@@ -967,7 +982,7 @@ h2 {
 .system-prediction-result > div:first-child > strong {
   margin-top: 7px;
   display: block;
-  font-size: clamp(1.7rem, 4vw, 2.7rem);
+  font-size: clamp(1.45rem, 3vw, 2.1rem);
 }
 
 .system-prediction-result p {
@@ -1119,24 +1134,46 @@ h2 {
 }
 
 .table-wrapper {
-  overflow-x: auto;
+  max-height: 285px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  scrollbar-color: #9aabc0 #edf1f6;
+  scrollbar-width: thin;
+}
+
+.table-wrapper::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+.table-wrapper::-webkit-scrollbar-track {
+  background: #edf1f6;
+}
+
+.table-wrapper::-webkit-scrollbar-thumb {
+  background: #9aabc0;
+  border-radius: 999px;
 }
 
 table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.82rem;
+  font-size: 0.74rem;
 }
 
 th,
 td {
-  padding: 12px 10px;
+  padding: 9px 9px;
   border-bottom: 1px solid #e7ebf0;
   text-align: left;
   white-space: nowrap;
 }
 
 th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   color: var(--muted);
   background: #f7f9fc;
   font-size: 0.67rem;

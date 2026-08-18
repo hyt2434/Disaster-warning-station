@@ -164,7 +164,12 @@ export default function App() {
           onCommand={sendBuzzerCommand}
         />
 
-        <section className="section-block" id="history" aria-labelledby="history-title">
+        <PredictionPanel
+          cloudPrediction={cloudPrediction}
+          predictionError={predictionError}
+        />
+
+        <section className="section-block cloud-data-section" id="history" aria-labelledby="history-title">
           <div className="section-heading">
             <div>
               <p className="eyebrow">Historical data</p>
@@ -178,17 +183,14 @@ export default function App() {
           <p className="function-note history-note">
             Monitor đọc dữ liệu PostgreSQL mỗi 2 giây. Biểu đồ dưới đây được tải trực tiếp từ ThingSpeak Cloud.
           </p>
+          <h3 className="history-subtitle">Biểu đồ lịch sử ThingSpeak</h3>
           <ThingSpeakHistoryChart
             cloudHistory={cloudHistory}
             historyError={historyError}
           />
+          <h3 className="history-subtitle">Nhật ký dữ liệu PostgreSQL</h3>
           {loading ? <div className="empty-state">Đang tải dữ liệu…</div> : <ReadingsTable readings={readings} />}
         </section>
-
-        <PredictionPanel
-          cloudPrediction={cloudPrediction}
-          predictionError={predictionError}
-        />
 
         <F7Panel latestF7={latestF7} connectionStatus={health?.f7_device} />
 
