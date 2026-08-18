@@ -39,7 +39,11 @@ def create_reading(database: Session, payload: SensorReadingCreate) -> SensorRea
         temperature=payload.temperature,
         humidity=payload.humidity,
         gas_raw=payload.gas_raw,
+        gas_filtered=payload.gas_filtered,
+        distance_cm=payload.distance_cm,
         water_level_cm=payload.water_level_cm,
+        water_level_percent=payload.water_level_percent,
+        vibration=payload.vibration,
         status=payload.status.upper(),
         recorded_at=payload.recorded_at or now,
     )

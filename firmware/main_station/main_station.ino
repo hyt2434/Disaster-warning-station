@@ -140,10 +140,13 @@ const float TEMP_WARNING = 35.0;
 const float TEMP_DANGER = 40.0;
 
 // MQ-2 ADC
-const int GAS_WARNING = 700;
-const int GAS_DANGER = 1000;
+// Giá trị nền đo được hiện khoảng 1110-1130 ADC.
+// Đây là ngưỡng demo; hãy hiệu chỉnh lại sau khi thử với khói thật.
+const int GAS_WARNING = 1300;
+const int GAS_DANGER = 1600;
 
 // Water
+// Đo khoảng cách thật từ cảm biến đến đáy bể rồi sửa giá trị này.
 const float SENSOR_HEIGHT_CM = 100.0;
 const float WATER_WARNING = 20.0;
 const float WATER_DANGER = 40.0;
@@ -171,10 +174,12 @@ WiFiUDP udp;
 float temperature = 0;
 float humidity = 0;
 
-int gasValue = 0;
+int gasRaw = 0;
+int gasFiltered = 0;
 
 float distanceCm = 0;
 float waterLevelCm = 0;
+float waterLevelPercent = 0;
 
 bool dhtValid = false;
 bool waterValid = false;
@@ -303,21 +308,32 @@ void readDHT11()
 
 int readMQ2()
 {
-  /*
-   * Read 5 times and use simple average.
-   */
-
   long total = 0;
+
+  Serial.print("[MQ2] Samples: ");
 
   for (int i = 0; i < 5; i++)
   {
-    total +=
+    int currentValue =
       analogRead(MQ2_PIN);
+
+    // gasRaw giữ mẫu mới nhất; giá trị trả về là trung bình 5 mẫu.
+    gasRaw = currentValue;
+    total += currentValue;
+
+    Serial.print(currentValue);
+    Serial.print(" ");
 
     delay(20);
   }
 
-  return total / 5;
+  int averageValue =
+    total / 5;
+
+  Serial.print("-> Average: ");
+  Serial.println(averageValue);
+
+  return averageValue;
 }
 
 // ============================================================
@@ -400,6 +416,12 @@ void readWaterSensor()
       SENSOR_HEIGHT_CM;
   }
 
+  if (SENSOR_HEIGHT_CM > 0)
+  {
+    waterLevelPercent =
+      (waterLevelCm / SENSOR_HEIGHT_CM) * 100.0;
+  }
+
   waterValid = true;
 }
 
@@ -431,7 +453,7 @@ int checkTemperatureLevel()
 int checkGasLevel()
 {
   if (
-    gasValue >=
+    gasFiltered >=
     GAS_DANGER
   )
   {
@@ -439,7 +461,7 @@ int checkGasLevel()
   }
 
   if (
-    gasValue >=
+    gasFiltered >=
     GAS_WARNING
   )
   {
@@ -474,7 +496,7 @@ void readAndClassifyLocalSensors()
 {
   readDHT11();
 
-  gasValue =
+  gasFiltered =
     readMQ2();
 
   readWaterSensor();
@@ -1222,12 +1244,24 @@ void publishTelemetry()
   data += String(humidity, 1);
   data += ",";
 
-  data += "\"gas\":";
-  data += String(gasValue);
+  data += "\"gasRaw\":";
+  data += String(gasRaw);
   data += ",";
 
-  data += "\"waterLevel\":";
+  data += "\"gasFiltered\":";
+  data += String(gasFiltered);
+  data += ",";
+
+  data += "\"distanceCm\":";
+  data += String(distanceCm, 1);
+  data += ",";
+
+  data += "\"waterLevelCm\":";
   data += String(waterLevelCm, 1);
+  data += ",";
+
+  data += "\"waterLevelPercent\":";
+  data += String(waterLevelPercent, 1);
   data += ",";
 
   data += "\"motionStatus\":\"";
@@ -1267,6 +1301,9 @@ void publishTelemetry()
 
   data += "}";
 
+  Serial.print("[MQTT] Publish telemetry: ");
+  Serial.println(data);
+
   mqttClient.publish(
     TOPIC_TELEMETRY,
     data.c_str()
@@ -1295,8 +1332,12 @@ void printSystemData()
   Serial.print(humidity);
   Serial.println(" %");
 
-  Serial.print("MQ-2        : ");
-  Serial.print(gasValue);
+  Serial.print("MQ-2 raw    : ");
+  Serial.print(gasRaw);
+  Serial.println(" ADC");
+
+  Serial.print("MQ-2 avg    : ");
+  Serial.print(gasFiltered);
   Serial.print(" ADC -> ");
   Serial.println(
     levelToText(gasLevel)
@@ -1304,7 +1345,9 @@ void printSystemData()
 
   Serial.print("Water       : ");
   Serial.print(waterLevelCm);
-  Serial.print(" cm -> ");
+  Serial.print(" cm (");
+  Serial.print(waterLevelPercent);
+  Serial.print("%) -> ");
   Serial.println(
     levelToText(waterLevel)
   );
@@ -1371,6 +1414,12 @@ void printSystemData()
 void setup()
 {
   Serial.begin(9600);
+  delay(1500);
+
+  Serial.println();
+  Serial.println("==============================");
+  Serial.println("ESP32-S3 STARTING...");
+  Serial.println("==============================");
 
   // --------------------------------------------------------
   // PINS

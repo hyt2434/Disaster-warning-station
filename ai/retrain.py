@@ -14,8 +14,9 @@ from sklearn.ensemble import RandomForestClassifier
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 ENV_FILE = PROJECT_ROOT / ".env"
 MODEL_FILE = PROJECT_ROOT / "backend" / "app" / "ml_models" / "disaster_model.pkl"
-REQUIRED_COLUMNS = ["temperature", "humidity", "smoke_level", "water_level"]
+REQUIRED_COLUMNS = ["temperature", "humidity", "gas_filtered", "water_level_cm"]
 MINIMUM_TRAINING_SAMPLES = 100
+GAS_DANGER_THRESHOLD = 1600
 
 load_dotenv(ENV_FILE)
 
@@ -63,6 +64,12 @@ def connect_to_cloud_collection() -> tuple[MongoClient, Collection]:
 def prepare_training_data(records: list[dict]) -> tuple[pd.DataFrame, pd.Series]:
     data_frame = pd.DataFrame(records)
 
+    # Hỗ trợ các document MongoDB cũ trước khi payload được chuẩn hóa.
+    if "gas_filtered" not in data_frame and "smoke_level" in data_frame:
+        data_frame["gas_filtered"] = data_frame["smoke_level"]
+    if "water_level_cm" not in data_frame and "water_level" in data_frame:
+        data_frame["water_level_cm"] = data_frame["water_level"]
+
     missing_columns = [
         column_name
         for column_name in REQUIRED_COLUMNS
@@ -86,9 +93,9 @@ def prepare_training_data(records: list[dict]) -> tuple[pd.DataFrame, pd.Series]
             f"(cần {MINIMUM_TRAINING_SAMPLES}, hiện có {len(data_frame)})."
         )
 
-    temperature_is_dangerous = data_frame["temperature"] > 50
-    smoke_is_dangerous = data_frame["smoke_level"] > 700
-    water_is_dangerous = data_frame["water_level"] >= 40
+    temperature_is_dangerous = data_frame["temperature"] >= 40
+    smoke_is_dangerous = data_frame["gas_filtered"] >= GAS_DANGER_THRESHOLD
+    water_is_dangerous = data_frame["water_level_cm"] >= 40
 
     labels = (
         temperature_is_dangerous
@@ -100,7 +107,7 @@ def prepare_training_data(records: list[dict]) -> tuple[pd.DataFrame, pd.Series]
     data_frame["water_danger"] = water_is_dangerous.astype(int)
 
     features = data_frame[
-        ["temperature", "humidity", "smoke_level", "water_danger"]
+        ["temperature", "humidity", "gas_filtered", "water_danger"]
     ]
     return features, labels
 
@@ -130,7 +137,7 @@ def retrain_model_from_cloud() -> None:
             max_depth=5,
             random_state=42,
         )
-        model.fit(features, labels)
+        model.fit(features.to_numpy(), labels)
 
         MODEL_FILE.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump(model, MODEL_FILE)

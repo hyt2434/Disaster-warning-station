@@ -1,13 +1,12 @@
-import logging
-import threading
-
-import os          
-import joblib      
-import numpy as np
-
 import json
+import logging
+import os
+import threading
 from datetime import datetime, timezone
+from pathlib import Path
 
+import joblib
+import numpy as np
 import paho.mqtt.client as mqtt
 
 from ..config import settings
@@ -28,12 +27,17 @@ from .topics import (
 
 logger = logging.getLogger("uvicorn.error")
 
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "..", "ml_models", "disaster_model.pkl")
+MODEL_PATH = Path(__file__).resolve().parent.parent / "ml_models" / "disaster_model.pkl"
+
 try:
     ai_model = joblib.load(MODEL_PATH)
-    logger.info("🧠 Đã tải thành công 'Bộ não' AI vào Backend!")
-except Exception as e:
-    logger.error("❌ Không tìm thấy file mô hình AI: %s", e)
+    logger.info("🧠 Đã tải mô hình AI vào backend từ: %s", MODEL_PATH)
+except FileNotFoundError:
+    logger.error("❌ Không tìm thấy file mô hình AI tại: %s", MODEL_PATH)
+    logger.error("Hãy chạy: python ai/train.py")
+    ai_model = None
+except Exception as error:
+    logger.error("❌ Không thể tải mô hình AI tại %s: %s", MODEL_PATH, error)
     ai_model = None
 
 class MQTTClient:
@@ -46,9 +50,12 @@ class MQTTClient:
         self._latest_f7: dict | None = None
         self._latest_ai_prediction = "not_run" if ai_model is not None else "unavailable"
 
+        # PID giúp mỗi backend local có Client ID riêng, tránh "session taken over".
+        self._runtime_client_id = f"{settings.mqtt_client_id}-{os.getpid()}"
+
         self._client = mqtt.Client(
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-            client_id=settings.mqtt_client_id,
+            client_id=self._runtime_client_id,
             protocol=mqtt.MQTTv311,
         )
 
@@ -112,9 +119,10 @@ class MQTTClient:
             return
 
         logger.info(
-            "Connecting to MQTT broker at %s:%s",
+            "Connecting to MQTT broker at %s:%s with client ID %s",
             settings.mqtt_broker_host,
             settings.mqtt_broker_port,
+            self._runtime_client_id,
         )
 
         self._client.connect_async(
@@ -293,17 +301,26 @@ class MQTTClient:
                     }
                     self._f7_status = "direct"
                 
-                # Tạo bản ghi với Time-Series tiêu chuẩn (UTC)
-                gas_value = data.get("gas", data.get("smoke", 0.0))
-                water_level = data.get("waterLevel", data.get("water", 0.0))
+                # Đọc payload mới; vẫn hỗ trợ tên cũ để demo không bị gián đoạn.
+                gas_raw = data.get("gasRaw", data.get("gas", data.get("smoke", 0)))
+                gas_filtered = data.get("gasFiltered", gas_raw)
+                distance_cm = data.get("distanceCm")
+                water_level_cm = data.get(
+                    "waterLevelCm",
+                    data.get("waterLevel", data.get("water", 0.0)),
+                )
+                water_level_percent = data.get("waterLevelPercent")
 
                 sensor_record = {
                     "timestamp": datetime.now(timezone.utc),
                     "device_id": data.get("deviceId", "main-station-01"),
                     "temperature": data.get("temperature", 0.0),
                     "humidity": data.get("humidity", 0.0),
-                    "smoke_level": gas_value,
-                    "water_level": water_level,
+                    "gas_raw": gas_raw,
+                    "gas_filtered": gas_filtered,
+                    "distance_cm": distance_cm,
+                    "water_level_cm": water_level_cm,
+                    "water_level_percent": water_level_percent,
                     "motion_status": data.get("motionStatus", "NORMAL"),
                     "motion_source": data.get("motionSource", "NONE"),
                     "motion_tilt": data.get("motionTilt"),
@@ -325,8 +342,12 @@ class MQTTClient:
                             device_id=sensor_record["device_id"],
                             temperature=float(sensor_record["temperature"]),
                             humidity=float(sensor_record["humidity"]),
-                            gas_raw=int(sensor_record["smoke_level"]),
-                            water_level_cm=float(sensor_record["water_level"]),
+                            gas_raw=sensor_record["gas_raw"],
+                            gas_filtered=sensor_record["gas_filtered"],
+                            distance_cm=sensor_record["distance_cm"],
+                            water_level_cm=sensor_record["water_level_cm"],
+                            water_level_percent=sensor_record["water_level_percent"],
+                            vibration=sensor_record["motion_vibration"],
                             status=system_status,
                         ),
                     )
@@ -350,12 +371,12 @@ class MQTTClient:
                 if ai_model is not None:
                     # 1. Đưa số liệu vào mảng theo đúng thứ tự lúc train: [Nhiệt độ, Độ ẩm, Khói, Nước]
                     # Model hiện được train với water là cờ 0/1.
-                    water_danger = 1.0 if water_level >= 40.0 else 0.0
+                    water_danger = 1.0 if water_level_cm >= 40.0 else 0.0
 
                     input_features = np.array([[
                         sensor_record["temperature"],
                         sensor_record["humidity"],
-                        sensor_record["smoke_level"],
+                        sensor_record["gas_filtered"],
                         water_danger
                     ]])
                     

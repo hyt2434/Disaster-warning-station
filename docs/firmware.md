@@ -142,16 +142,16 @@ Luồng xử lý:
 analogRead(GPIO5)
       |
       v
-    mq2Raw
+    gasRaw
       |
       v
-Moving Average (10 samples)
+Average (5 samples)
       |
       v
- mq2Filtered
+ gasFiltered
       |
       v
-Hysteresis state machine
+Compare with demo thresholds
       |
       +--> SAFE
       +--> WARNING
@@ -160,16 +160,17 @@ Hysteresis state machine
 
 Firmware **không gọi dữ liệu là ppm**, vì chưa có calibration khí chuẩn.
 
-Baseline được đo sau khoảng thời gian warm-up ban đầu và chỉ gửi lên để làm tham chiếu.
+Serial Monitor in cả 5 mẫu và giá trị trung bình để hỗ trợ calibration.
 
 ### Ngưỡng mặc định trong code
 
-| Trạng thái | Enter | Exit |
-|---|---:|---:|
-| Gas WARNING | 700 | 650 |
-| Gas DANGER | 1000 | 900 |
+| Trạng thái | Khoảng ADC |
+|---|---:|
+| SAFE | `< 1300` |
+| WARNING | `1300 đến < 1600` |
+| DANGER | `>= 1600` |
 
-`1000/900` xuất phát từ ví dụ hysteresis đã chốt. `700/650` là giá trị khởi đầu để test, phải hiệu chỉnh bằng dữ liệu cảm biến thật.
+`1300/1600` là ngưỡng demo dựa trên mức nền quan sát được khoảng `1110-1130`; vẫn cần hiệu chỉnh bằng cảm biến thật.
 
 ---
 
@@ -288,20 +289,21 @@ Ví dụ:
 
 ```json
 {
-  "deviceId": "main-01",
+  "deviceId": "main-station-01",
   "temperature": 30.2,
   "humidity": 68.0,
-  "mq2Raw": 634,
-  "mq2Filtered": 631.5,
-  "mq2BaselineReady": true,
-  "mq2Baseline": 420.1,
-  "gasStatus": "SAFE",
+  "gasRaw": 1125,
+  "gasFiltered": 1120,
   "distanceCm": 65.4,
   "waterLevelCm": 34.6,
-  "waterStatus": "WARNING",
-  "buzzer": false,
-  "buzzerMode": "OFF",
-  "wifiConnected": true
+  "waterLevelPercent": 34.6,
+  "motionStatus": "SAFE",
+  "motionSource": "MQTT",
+  "motionTilt": 1.2,
+  "motionVibration": 0.18,
+  "motionImpact": 0.42,
+  "systemStatus": "WARNING",
+  "buzzer": false
 }
 ```
 

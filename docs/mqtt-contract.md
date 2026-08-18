@@ -222,7 +222,7 @@ Backend
 
 ```json
 {
-  "deviceId": "main-01",
+  "deviceId": "main-station-01",
   "uptimeMs": 153420,
   "timestamp": "2026-08-15T00:30:15Z",
 
@@ -230,14 +230,15 @@ Backend
   "humidity": 68.0,
   "dhtLastReadValid": true,
 
-  "mq2Raw": 634,
-  "mq2Filtered": 631.5,
+  "gasRaw": 1125,
+  "gasFiltered": 1120.4,
   "gasStatus": "SAFE",
   "mq2BaselineReady": true,
   "mq2Baseline": 415.8,
 
   "distanceCm": 65.4,
   "waterLevelCm": 34.6,
+  "waterLevelPercent": 34.6,
   "waterLastReadValid": true,
   "waterStatus": "WARNING",
   "installationHeightCm": 100.0,
@@ -283,8 +284,8 @@ This means the displayed values are the **last known good values**.
 
 | Field | Type | Example | Meaning |
 |---|---|---:|---|
-| `mq2Raw` | integer | `634` | Current raw ADC reading |
-| `mq2Filtered` | number | `631.5` | Moving-average filtered value |
+| `gasRaw` | integer | `1125` | Current raw ADC reading |
+| `gasFiltered` | number | `1120.4` | Average of the latest 5 samples |
 | `gasStatus` | string | `"SAFE"` | Gas hazard state |
 | `mq2BaselineReady` | boolean | `true` | Whether baseline calibration is complete |
 | `mq2Baseline` | number / null | `415.8` | MQ-2 baseline value |
@@ -297,7 +298,7 @@ WARNING
 DANGER
 ```
 
-> `mq2Raw` and `mq2Filtered` are currently ADC values, **not ppm values**.
+> `gasRaw` and `gasFiltered` are currently ADC values, **not ppm values**.
 
 ---
 
@@ -307,6 +308,7 @@ DANGER
 |---|---|---:|---|
 | `distanceCm` | number / null | `65.4` | Distance from sensor to water surface |
 | `waterLevelCm` | number / null | `34.6` | Calculated water level from the bottom |
+| `waterLevelPercent` | number / null | `34.6` | Water level as a percentage of sensor height |
 | `waterLastReadValid` | boolean | `true` | Whether the latest ultrasonic reading was valid |
 | `waterStatus` | string | `"WARNING"` | Water-level state |
 | `installationHeightCm` | number | `100.0` | Sensor installation height |
@@ -1498,8 +1500,8 @@ map:
 Temperature       ← temperature
 Humidity          ← humidity
 
-Gas raw           ← mq2Raw
-Gas filtered      ← mq2Filtered
+Gas raw           ← gasRaw
+Gas filtered      ← gasFiltered
 Gas state         ← gasStatus
 
 Distance          ← distanceCm
@@ -1549,7 +1551,7 @@ disaster/main/telemetry
   "deviceId": "main-01",
   "temperature": 29.5,
   "humidity": 70.0,
-  "mq2Filtered": 420.5,
+  "gasFiltered": 1120.4,
   "gasStatus": "SAFE",
   "waterLevelCm": 10.2,
   "waterStatus": "SAFE",

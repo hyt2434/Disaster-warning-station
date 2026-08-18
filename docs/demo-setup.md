@@ -679,9 +679,9 @@ These are demo thresholds and should be calibrated with the real physical model.
 ## MQ-2
 
 ```text
-< 700 ADC        SAFE
-700 - <1000      WARNING
->= 1000          DANGER
+< 1300 ADC        SAFE
+1300 - <1600      WARNING
+>= 1600           DANGER
 ```
 
 MQ-2 values here are ADC values, not ppm.
@@ -1148,37 +1148,37 @@ The ESP32 ADC is configured as 12-bit, so the theoretical ADC range is:
 The current demo thresholds are:
 
 ```cpp
-GAS_WARNING = 700;
-GAS_DANGER  = 1000;
+GAS_WARNING = 1300;
+GAS_DANGER  = 1600;
 ```
 
 | MQ-2 ADC value | Level | If this is the highest system level |
 |---:|---|---|
-| `< 700` | SAFE | Green LED |
-| `700 to < 1000` | WARNING | Yellow LED |
-| `>= 1000` | DANGER | Red LED + Buzzer |
+| `< 1300` | SAFE | Green LED |
+| `1300 to < 1600` | WARNING | Yellow LED |
+| `>= 1600` | DANGER | Red LED + Buzzer |
 
 Examples:
 
 ```text
-MQ-2 = 450
+MQ-2 = 1120
 -> SAFE
 -> GREEN
 ```
 
 ```text
-MQ-2 = 820
+MQ-2 = 1400
 -> WARNING
 -> YELLOW
 ```
 
 ```text
-MQ-2 = 1250
+MQ-2 = 1700
 -> DANGER
 -> RED + BUZZER
 ```
 
-Important: `700` and `1000` are only starting values for the demo. Observe the real MQ-2 readings on your hardware and adjust if necessary. Do not call these values ppm unless the sensor has been calibrated for ppm measurement.
+Important: `1300` and `1600` are demo thresholds based on the observed baseline around `1110-1130`. Test with clean air and controlled smoke before finalizing them. Do not call these values ppm unless the sensor has been calibrated for ppm measurement.
 
 ---
 
@@ -1473,7 +1473,7 @@ This is the main table to review before viva.
 |---|---|---|---|
 | Temperature | `< 35°C` | `35 to < 40°C` | `>= 40°C` |
 | Humidity | Monitoring only | — | — |
-| MQ-2 | `< 700 ADC` | `700 to < 1000` | `>= 1000` |
+| MQ-2 | `< 1300 ADC` | `1300 to < 1600` | `>= 1600` |
 | Water level | `< 20 cm` | `20 to < 40 cm` | `>= 40 cm` |
 | Tilt | `< 10°` | `10 to < 20°` | `>= 20°` |
 | Vibration | `< 1.20 m/s²` | `1.20 to < 2.50` | `>= 2.50` |

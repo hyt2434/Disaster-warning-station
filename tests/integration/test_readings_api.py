@@ -52,7 +52,11 @@ def test_health_and_reading_flow() -> None:
                 "temperature": 31.5,
                 "humidity": 72.4,
                 "gas_raw": 1380,
+                "gas_filtered": 1372.5,
+                "distance_cm": 18.0,
                 "water_level_cm": 8.2,
+                "water_level_percent": 27.3,
+                "vibration": 0.4,
                 "status": "warning",
             },
         )
@@ -63,3 +67,7 @@ def test_health_and_reading_flow() -> None:
         assert readings.status_code == 200
         assert len(readings.json()) == 1
         assert readings.json()[0]["device_id"] == "main-station-test"
+        assert readings.json()[0]["gas_filtered"] == 1372.5
+        assert readings.json()[0]["distance_cm"] == 18.0
+        assert readings.json()[0]["water_level_percent"] == 27.3
+        assert readings.json()[0]["vibration"] == 0.4
