@@ -28,6 +28,8 @@ from .topics import (
 logger = logging.getLogger("uvicorn.error")
 
 MODEL_PATH = Path(__file__).resolve().parent.parent / "ml_models" / "disaster_model.pkl"
+WATER_DANGER_DISTANCE_CM = 30.0
+WATER_DANGER_LEVEL_CM = 70.0
 
 try:
     ai_model = joblib.load(MODEL_PATH)
@@ -371,7 +373,21 @@ class MQTTClient:
                 if ai_model is not None:
                     # 1. Đưa số liệu vào mảng theo đúng thứ tự lúc train: [Nhiệt độ, Độ ẩm, Khói, Nước]
                     # Model hiện được train với water là cờ 0/1.
-                    water_danger = 1.0 if water_level_cm >= 40.0 else 0.0
+                    if distance_cm is not None:
+                        water_danger = (
+                            1.0
+                            if float(distance_cm) <= WATER_DANGER_DISTANCE_CM
+                            else 0.0
+                        )
+                    elif water_level_cm is not None:
+                        # Hỗ trợ bản ghi cũ chưa có distance_cm.
+                        water_danger = (
+                            1.0
+                            if float(water_level_cm) >= WATER_DANGER_LEVEL_CM
+                            else 0.0
+                        )
+                    else:
+                        water_danger = 0.0
 
                     input_features = np.array([[
                         sensor_record["temperature"],

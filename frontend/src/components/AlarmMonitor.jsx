@@ -1,4 +1,4 @@
-import { SENSOR_THRESHOLDS } from '../config/thresholds';
+import { getWaterAlarmLevel, SENSOR_THRESHOLDS } from '../config/thresholds';
 
 const alarmContent = {
   normal: {
@@ -30,7 +30,7 @@ function findSensorWarnings(reading) {
     warnings.push('Khói hoặc gas cao');
   }
 
-  if (reading.water_level_cm >= SENSOR_THRESHOLDS.water.danger) {
+  if (getWaterAlarmLevel(reading) === 'danger') {
     warnings.push('Mực nước nguy hiểm');
   }
 
@@ -52,7 +52,7 @@ function getAlarmLevel(reading, backendOnline) {
   const hasWarningValue =
     reading.temperature >= SENSOR_THRESHOLDS.temperature.warning ||
     reading.gas_raw >= SENSOR_THRESHOLDS.gas.warning ||
-    reading.water_level_cm >= SENSOR_THRESHOLDS.water.warning;
+    getWaterAlarmLevel(reading) === 'warning';
 
   if (deviceStatus === 'warning' || hasWarningValue) {
     return 'warning';

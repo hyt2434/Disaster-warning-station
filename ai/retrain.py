@@ -17,6 +17,8 @@ MODEL_FILE = PROJECT_ROOT / "backend" / "app" / "ml_models" / "disaster_model.pk
 REQUIRED_COLUMNS = ["temperature", "humidity", "gas_filtered", "water_level_cm"]
 MINIMUM_TRAINING_SAMPLES = 100
 GAS_DANGER_THRESHOLD = 1600
+SENSOR_HEIGHT_CM = 100
+WATER_DANGER_DISTANCE_CM = 30
 
 load_dotenv(ENV_FILE)
 
@@ -69,6 +71,14 @@ def prepare_training_data(records: list[dict]) -> tuple[pd.DataFrame, pd.Series]
         data_frame["gas_filtered"] = data_frame["smoke_level"]
     if "water_level_cm" not in data_frame and "water_level" in data_frame:
         data_frame["water_level_cm"] = data_frame["water_level"]
+    if "distance_cm" not in data_frame and "distance" in data_frame:
+        data_frame["distance_cm"] = data_frame["distance"]
+    if "distance_cm" not in data_frame and "water_level_cm" in data_frame:
+        old_water_levels = pd.to_numeric(
+            data_frame["water_level_cm"],
+            errors="coerce",
+        )
+        data_frame["distance_cm"] = SENSOR_HEIGHT_CM - old_water_levels
 
     missing_columns = [
         column_name
@@ -79,13 +89,15 @@ def prepare_training_data(records: list[dict]) -> tuple[pd.DataFrame, pd.Series]
         missing_text = ", ".join(missing_columns)
         raise ValueError(f"Dữ liệu MongoDB đang thiếu các cột: {missing_text}")
 
-    for column_name in REQUIRED_COLUMNS:
+    numeric_columns = [*REQUIRED_COLUMNS, "distance_cm"]
+
+    for column_name in numeric_columns:
         data_frame[column_name] = pd.to_numeric(
             data_frame[column_name],
             errors="coerce",
         )
 
-    data_frame = data_frame.dropna(subset=REQUIRED_COLUMNS).copy()
+    data_frame = data_frame.dropna(subset=numeric_columns).copy()
 
     if len(data_frame) < MINIMUM_TRAINING_SAMPLES:
         raise ValueError(
@@ -95,7 +107,7 @@ def prepare_training_data(records: list[dict]) -> tuple[pd.DataFrame, pd.Series]
 
     temperature_is_dangerous = data_frame["temperature"] >= 40
     smoke_is_dangerous = data_frame["gas_filtered"] >= GAS_DANGER_THRESHOLD
-    water_is_dangerous = data_frame["water_level_cm"] >= 40
+    water_is_dangerous = data_frame["distance_cm"] <= WATER_DANGER_DISTANCE_CM
 
     labels = (
         temperature_is_dangerous

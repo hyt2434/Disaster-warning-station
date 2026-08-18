@@ -1,36 +1,54 @@
 /*
  * ============================================================
  * ESP32-S3 MAIN
- * SIMPLE DEMO + RECEIVE MOTION FROM C3
+ * NORMAL MQTT + DIRECT UDP FALLBACK
  * ============================================================
  *
  * NORMAL MODE:
  *   C3 -> Home WiFi -> MQTT -> S3
  *
- * WHEN HOME WIFI IS LOST:
- *   C3 -> S3's private WiFi AP -> UDP -> S3
+ * FALLBACK MODE:
+ *   Home WiFi lost
+ *   C3 -> S3 private WiFi AP -> UDP -> S3
  *
- * The S3 always keeps its private AP ON.
+ * LOCAL SENSORS:
+ *   DHT11
+ *   MQ-2
+ *   JSN-SR04T
  *
- * Local sensors:
- *   DHT11      -> temperature + humidity
- *   MQ-2       -> gas
- *   JSN-SR04T  -> water level
+ * REMOTE SENSOR:
+ *   C3 + MPU6050
  *
- * Remote sensor:
- *   C3 + MPU6050 -> motion
+ * SYSTEM LEVEL:
+ *   Highest of:
+ *     temperature
+ *     gas
+ *     water
+ *     motion
  *
- * Overall level:
- *   highest of:
+ * OUTPUT:
+ *   SAFE    -> GREEN LED
+ *   WARNING -> YELLOW LED
+ *   DANGER  -> RED LED + BUZZER
  *
- *   temperature
- *   gas
- *   water
- *   motion
+ * WATER LOGIC:
+ *   Sensor is mounted 100 cm above ground.
  *
- * SAFE    -> GREEN LED
- * WARNING -> YELLOW LED
- * DANGER  -> RED LED + BUZZER
+ *   waterLevel = 100 - distance
+ *
+ *   Distance large  -> water low
+ *   Distance small  -> water high
+ *
+ *   JSN-SR04T minimum reliable distance: 23 cm
+ *   Therefore maximum directly measurable water level:
+ *
+ *     100 - 23 = 77 cm
+ *
+ *   SAFE    : distance > 40 cm  -> water < 60 cm
+ *   WARNING : 30 < distance <= 40 cm -> water
+ * from 60 to below 70 cm
+ *   DANGER  : 23 <= distance <= 30 cm -> water from 70 to 77 cm
+ *
  * ============================================================
  */
 
@@ -44,65 +62,53 @@
 // ============================================================
 
 const char* HOME_WIFI_SSID = "YOUR_WIFI_SSID";
+
 const char* HOME_WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 
-const char* MQTT_HOST = "192.168.1.100";
+// Laptop IPv4 running Mosquitto.
+// Example: 192.168.1.12
+const char* MQTT_HOST = "192.168.1.12";
+
 const int MQTT_PORT = 1883;
+
 const char* MQTT_USER = "";
 const char* MQTT_PASSWORD = "";
 
 const char* DEVICE_ID = "main-station-01";
 
-const char* TOPIC_TELEMETRY =
-  "disaster/main/telemetry";
+// Main telemetry
+const char* TOPIC_TELEMETRY = "disaster/main/telemetry";
 
-const char* TOPIC_BUZZER_COMMAND =
-  "disaster/main/command/buzzer";
+// Manual buzzer command from web
+const char* TOPIC_BUZZER_COMMAND = "disaster/main/command/buzzer";
 
-const char* TOPIC_BUZZER_STATE =
-  "disaster/main/state/buzzer";
+// Buzzer state
+const char* TOPIC_BUZZER_STATE = "disaster/main/state/buzzer";
 
-const char* TOPIC_MOTION_STATE =
-  "disaster/f7/state";
+// C3 motion state
+const char* TOPIC_MOTION_STATE = "disaster/f7/state";
 
-const char* TOPIC_STATUS =
-  "disaster/main/status";
+// Main online/offline
+const char* TOPIC_STATUS = "disaster/main/status";
 
 // ============================================================
-// 2. DIRECT WIFI FOR C3 FALLBACK
+// 2. DIRECT WIFI FALLBACK FOR C3
 // ============================================================
 
-const char* DIRECT_AP_SSID =
-  "DISASTER_MAIN_DIRECT";
+const char* DIRECT_AP_SSID = "DISASTER_MAIN_DIRECT";
 
-const char* DIRECT_AP_PASSWORD =
-  "12345678";
+const char* DIRECT_AP_PASSWORD = "12345678";
 
-IPAddress DIRECT_AP_IP(
-  192,
-  168,
-  4,
-  1
-);
+IPAddress DIRECT_AP_IP(192, 168, 4, 1);
 
-IPAddress DIRECT_AP_GATEWAY(
-  192,
-  168,
-  4,
-  1
-);
+IPAddress DIRECT_AP_GATEWAY(192, 168, 4, 1);
 
-IPAddress DIRECT_AP_SUBNET(
-  255,
-  255,
-  255,
-  0
-);
+IPAddress DIRECT_AP_SUBNET(255, 255, 255, 0);
 
 const int DIRECT_UDP_PORT = 4210;
 
-// If no C3 update arrives for 4 seconds,
-// forget the old motion state.
+// If no motion packet arrives for 4 s,
+// reset motion state to SAFE.
 const unsigned long MOTION_TIMEOUT_MS = 4000;
 
 // ============================================================
@@ -123,6 +129,9 @@ const int LED_RED_PIN = 18;
 
 #define DHT_TYPE DHT11
 
+// Change to false if you want silent testing.
+const bool ENABLE_BUZZER = true;
+
 // ============================================================
 // 4. LEVELS
 // ============================================================
@@ -132,60 +141,80 @@ const int WARNING = 1;
 const int DANGER = 2;
 
 // ============================================================
-// 5. DEMO THRESHOLDS
+// 5. THRESHOLDS
 // ============================================================
 
+// --------------------
 // Temperature
+// --------------------
+
 const float TEMP_WARNING = 35.0;
+
 const float TEMP_DANGER = 40.0;
 
-// MQ-2 ADC
-// Giá trị nền đo được hiện khoảng 1110-1130 ADC.
-// Đây là ngưỡng demo; hãy hiệu chỉnh lại sau khi thử với khói thật.
+// --------------------
+// MQ-2
+// --------------------
+
 const int GAS_WARNING = 1300;
+
 const int GAS_DANGER = 1600;
 
+// --------------------
 // Water
-// Đo khoảng cách thật từ cảm biến đến đáy bể rồi sửa giá trị này.
+// --------------------
+
+// JSN-SR04T is mounted 100 cm above ground.
 const float SENSOR_HEIGHT_CM = 100.0;
-const float WATER_WARNING = 20.0;
-const float WATER_DANGER = 40.0;
+
+// Minimum reliable distance of the JSN-SR04T in this setup.
+const float MIN_VALID_DISTANCE_CM = 23.0;
+
+// Maximum water level that can be measured reliably:
+// 100 - 23 = 77 cm
+const float MAX_MEASURABLE_WATER_LEVEL_CM = SENSOR_HEIGHT_CM - MIN_VALID_DISTANCE_CM;
+
+// Alarm thresholds are compared directly with the measured distance.
+// A smaller distance means a higher, more dangerous water level.
+//
+// SAFE:    distance > 40 cm
+// WARNING: 30 < distance <= 40 cm
+// DANGER:  23 <= distance <= 30 cm
+const float WATER_WARNING_DISTANCE_CM = 40.0;
+
+const float WATER_DANGER_DISTANCE_CM = 30.0;
 
 // ============================================================
 // 6. OBJECTS
 // ============================================================
 
-DHT dht(
-  DHT_PIN,
-  DHT_TYPE
-);
+DHT dht(DHT_PIN, DHT_TYPE);
 
 WiFiClient wifiClient;
-PubSubClient mqttClient(
-  wifiClient
-);
+
+PubSubClient mqttClient(wifiClient);
 
 WiFiUDP udp;
 
 // ============================================================
-// 7. LOCAL SENSOR VALUES
+// 7. SENSOR VALUES
 // ============================================================
 
-float temperature = 0;
-float humidity = 0;
+float temperature = 0.0;
+float humidity = 0.0;
 
 int gasRaw = 0;
 int gasFiltered = 0;
 
-float distanceCm = 0;
-float waterLevelCm = 0;
-float waterLevelPercent = 0;
+float distanceCm = 0.0;
+float waterLevelCm = 0.0;
+float waterLevelPercent = 0.0;
 
 bool dhtValid = false;
 bool waterValid = false;
 
 // ============================================================
-// 8. LOCAL LEVELS
+// 8. SENSOR LEVELS
 // ============================================================
 
 int temperatureLevel = SAFE;
@@ -198,34 +227,43 @@ int waterLevel = SAFE;
 
 int motionLevel = SAFE;
 
-float motionTilt = 0;
-float motionVibration = 0;
-float motionImpact = 0;
+float motionTilt = 0.0;
+float motionVibration = 0.0;
+float motionImpact = 0.0;
 
 String motionSource = "NONE";
 
 unsigned long lastMotionUpdate = 0;
 
 // ============================================================
-// 10. OVERALL SYSTEM
+// 10. SYSTEM
 // ============================================================
 
 int systemLevel = SAFE;
 
 bool manualBuzzerOn = false;
+
 bool buzzerOn = false;
+
 bool previousBuzzerState = false;
 
 // ============================================================
 // 11. TIMERS
 // ============================================================
 
-unsigned long lastHomeWiFiRetry = 0;
 unsigned long lastMQTTRetry = 0;
+
+unsigned long lastNetworkStatusLog = 0;
+
 unsigned long lastLocalSensorRead = 0;
+
 unsigned long lastTelemetry = 0;
 
 bool homeWiFiWasConnected = false;
+
+const unsigned long MQTT_RETRY_INTERVAL_MS = 5000;
+
+const unsigned long NETWORK_LOG_INTERVAL_MS = 5000;
 
 // ============================================================
 // 12. HELPERS
@@ -256,10 +294,7 @@ int textToLevel(String text)
     return DANGER;
   }
 
-  if (
-    text == "WARNING" ||
-    text == "WARN"
-  )
+  if (text == "WARNING" || text == "WARN")
   {
     return WARNING;
   }
@@ -267,43 +302,100 @@ int textToLevel(String text)
   return SAFE;
 }
 
+const char* wifiStatusToText(wl_status_t status)
+{
+  switch (status)
+  {
+    case WL_CONNECTED:
+      return "CONNECTED";
+
+    case WL_NO_SSID_AVAIL:
+      return "SSID NOT FOUND";
+
+    case WL_CONNECT_FAILED:
+      return "CONNECT FAILED";
+
+    case WL_CONNECTION_LOST:
+      return "CONNECTION LOST";
+
+    case WL_DISCONNECTED:
+      return "DISCONNECTED";
+
+    case WL_IDLE_STATUS:
+      return "CONNECTING";
+
+    default:
+      return "UNKNOWN";
+  }
+}
+
+const char* mqttStateToText(int state)
+{
+  switch (state)
+  {
+    case 0:
+      return "CONNECTED";
+
+    case -4:
+      return "TIMEOUT";
+
+    case -3:
+      return "CONNECTION LOST";
+
+    case -2:
+      return "BROKER UNREACHABLE";
+
+    case -1:
+      return "DISCONNECTED";
+
+    case 1:
+      return "BAD PROTOCOL";
+
+    case 2:
+      return "BAD CLIENT ID";
+
+    case 3:
+      return "BROKER UNAVAILABLE";
+
+    case 4:
+      return "BAD CREDENTIALS";
+
+    case 5:
+      return "NOT AUTHORIZED";
+
+    default:
+      return "UNKNOWN";
+  }
+}
+
 // ============================================================
-// 13. READ DHT11
+// 13. DHT11
 // ============================================================
 
 void readDHT11()
 {
-  float newTemperature =
-    dht.readTemperature();
+  float newTemperature = dht.readTemperature();
 
-  float newHumidity =
-    dht.readHumidity();
+  float newHumidity = dht.readHumidity();
 
-  if (
-    isnan(newTemperature) ||
-    isnan(newHumidity)
-  )
+  if (isnan(newTemperature) || isnan(newHumidity))
   {
     dhtValid = false;
 
-    Serial.println(
-      "[DHT] Read failed"
-    );
+    Serial.println("[DHT] Read failed");
 
     return;
   }
 
-  temperature =
-    newTemperature;
+  temperature = newTemperature;
 
-  humidity =
-    newHumidity;
+  humidity = newHumidity;
 
   dhtValid = true;
 }
 
 // ============================================================
-// 14. READ MQ-2
+// 14. MQ-2
 // ============================================================
 
 int readMQ2()
@@ -314,243 +406,285 @@ int readMQ2()
 
   for (int i = 0; i < 5; i++)
   {
-    int currentValue =
-      analogRead(MQ2_PIN);
+    int currentValue = analogRead(MQ2_PIN);
 
-    // gasRaw giữ mẫu mới nhất; giá trị trả về là trung bình 5 mẫu.
     gasRaw = currentValue;
+
     total += currentValue;
 
     Serial.print(currentValue);
+
     Serial.print(" ");
 
     delay(20);
   }
 
-  int averageValue =
-    total / 5;
+  int averageValue = total / 5;
 
   Serial.print("-> Average: ");
+
   Serial.println(averageValue);
 
   return averageValue;
 }
 
 // ============================================================
-// 15. READ ULTRASONIC
+// 15. JSN-SR04T
 // ============================================================
 
 float readDistance()
 {
-  digitalWrite(
-    TRIG_PIN,
-    LOW
-  );
+  digitalWrite(TRIG_PIN, LOW);
 
   delayMicroseconds(2);
 
-  digitalWrite(
-    TRIG_PIN,
-    HIGH
-  );
+  digitalWrite(TRIG_PIN, HIGH);
 
   delayMicroseconds(10);
 
-  digitalWrite(
-    TRIG_PIN,
-    LOW
-  );
+  digitalWrite(TRIG_PIN, LOW);
 
-  unsigned long duration =
-    pulseIn(
-      ECHO_PIN,
-      HIGH,
-      30000
-    );
+  unsigned long duration = pulseIn(ECHO_PIN, HIGH, 30000);
 
   if (duration == 0)
   {
-    return -1;
+    return -1.0;
   }
 
-  float distance =
-    duration * 0.0343 / 2.0;
+  float distance = duration * 0.0343 / 2.0;
 
   return distance;
 }
 
+// ============================================================
+// 16. WATER LEVEL
+// ============================================================
+
 void readWaterSensor()
 {
-  float newDistance =
-    readDistance();
+  float measuredDistance = readDistance();
 
-  if (newDistance < 0)
+  // ----------------------------------------------------------
+  // CASE 1:
+  // No echo received.
+  //
+  // Do not reset water level to SAFE.
+  // Keep the previous valid water state instead.
+  // ----------------------------------------------------------
+
+  if (measuredDistance < 0)
   {
     waterValid = false;
 
-    Serial.println(
-      "[WATER] No echo"
-    );
+    Serial.println("[WATER] No echo - keep previous water state");
 
     return;
   }
 
-  distanceCm =
-    newDistance;
+  // ----------------------------------------------------------
+  // CASE 2:
+  // Object/water is closer than 23 cm.
+  //
+  // The sensor cannot measure reliably in this region.
+  // Since the sensor is 100 cm above ground,
+  // distance < 23 cm means water is already above
+  // approximately 77 cm.
+  //
+  // For safety, clamp the reading to 23 cm.
+  // This gives the highest measurable water level: 77 cm,
+  // which is classified as DANGER.
+  // ----------------------------------------------------------
 
-  waterLevelCm =
-    SENSOR_HEIGHT_CM -
-    distanceCm;
+  if (measuredDistance < MIN_VALID_DISTANCE_CM)
+  {
+    Serial.print("[WATER] Too close for reliable measurement: ");
 
+    Serial.print(measuredDistance);
+
+    Serial.println(" cm -> clamp to 23 cm / DANGER zone");
+
+    measuredDistance = MIN_VALID_DISTANCE_CM;
+  }
+
+  distanceCm = measuredDistance;
+
+  /*
+   * Physical setup:
+   *
+   * JSN-SR04T
+   *     |
+   *     | 100 cm
+   *     |
+   *   ground
+   *
+   * Formula:
+   *
+   * waterLevel =
+   * sensorHeight - measuredDistance
+   *
+   * Examples:
+   *
+   * distance = 90 cm
+   * water    = 10 cm
+   *
+   * distance = 40 cm
+   * water    = 60 cm
+   *
+   * distance = 30 cm
+   * water    = 70 cm
+   *
+   * distance = 23 cm
+   * water    = 77 cm
+   */
+
+  waterLevelCm = SENSOR_HEIGHT_CM - distanceCm;
+
+  // If measured distance is greater than the mounting height,
+  // treat water level as 0 cm.
   if (waterLevelCm < 0)
   {
     waterLevelCm = 0;
   }
 
-  if (
-    waterLevelCm >
-    SENSOR_HEIGHT_CM
-  )
+  // Because the sensor cannot reliably measure closer than 23 cm,
+  // cap the directly measurable water level at 77 cm.
+  if (waterLevelCm > MAX_MEASURABLE_WATER_LEVEL_CM)
   {
-    waterLevelCm =
-      SENSOR_HEIGHT_CM;
+    waterLevelCm = MAX_MEASURABLE_WATER_LEVEL_CM;
   }
 
-  if (SENSOR_HEIGHT_CM > 0)
-  {
-    waterLevelPercent =
-      (waterLevelCm / SENSOR_HEIGHT_CM) * 100.0;
-  }
+  // Percentage is relative to the real 100 cm installation height.
+  // Therefore the maximum directly measurable percentage is 77%.
+  waterLevelPercent = (waterLevelCm / SENSOR_HEIGHT_CM) * 100.0;
 
   waterValid = true;
 }
 
 // ============================================================
-// 16. CLASSIFY LOCAL SENSOR LEVELS
+// 17. CLASSIFY TEMPERATURE
 // ============================================================
 
 int checkTemperatureLevel()
 {
-  if (
-    temperature >=
-    TEMP_DANGER
-  )
+  if (temperature >= TEMP_DANGER)
   {
     return DANGER;
   }
 
-  if (
-    temperature >=
-    TEMP_WARNING
-  )
+  if (temperature >= TEMP_WARNING)
   {
     return WARNING;
   }
 
   return SAFE;
 }
+
+// ============================================================
+// 18. CLASSIFY GAS
+// ============================================================
 
 int checkGasLevel()
 {
-  if (
-    gasFiltered >=
-    GAS_DANGER
-  )
+  if (gasFiltered >= GAS_DANGER)
   {
     return DANGER;
   }
 
-  if (
-    gasFiltered >=
-    GAS_WARNING
-  )
+  if (gasFiltered >= GAS_WARNING)
   {
     return WARNING;
   }
 
   return SAFE;
 }
+
+// ============================================================
+// 19. CLASSIFY WATER
+// ============================================================
 
 int checkWaterLevel()
 {
-  if (
-    waterLevelCm >=
-    WATER_DANGER
-  )
+  /*
+   * Distance from 23 cm to 30 cm
+   * Water level from 70 cm to 77 cm
+   * -> DANGER
+   */
+
+  if (distanceCm <= WATER_DANGER_DISTANCE_CM)
   {
     return DANGER;
   }
 
-  if (
-    waterLevelCm >=
-    WATER_WARNING
-  )
+  /*
+   * Distance greater than 30 cm and up to 40 cm
+   * Water level from 60 cm to below 70 cm
+
+   * * -> WARNING
+   */
+
+  if (distanceCm <= WATER_WARNING_DISTANCE_CM)
   {
     return WARNING;
   }
 
+  /*
+   * Distance greater than 40 cm
+   * Water < 60 cm
+   * -> SAFE
+   */
+
   return SAFE;
 }
+
+// ============================================================
+// 20. READ + CLASSIFY LOCAL SENSORS
+// ============================================================
 
 void readAndClassifyLocalSensors()
 {
   readDHT11();
 
-  gasFiltered =
-    readMQ2();
+  gasFiltered = readMQ2();
 
   readWaterSensor();
 
   if (dhtValid)
   {
-    temperatureLevel =
-      checkTemperatureLevel();
+    temperatureLevel = checkTemperatureLevel();
   }
 
-  gasLevel =
-    checkGasLevel();
+  gasLevel = checkGasLevel();
 
   if (waterValid)
   {
-    waterLevel =
-      checkWaterLevel();
+    waterLevel = checkWaterLevel();
   }
 }
 
 // ============================================================
-// 17. RECEIVE MOTION THROUGH MQTT
+// 21. MOTION THROUGH MQTT
 // ============================================================
 
-void updateMotionFromMQTT(
-  String payload
-)
+void updateMotionFromMQTT(String payload)
 {
-  motionLevel =
-    textToLevel(payload);
+  motionLevel = textToLevel(payload);
 
-  motionSource =
-    "MQTT";
+  motionSource = "MQTT";
 
-  lastMotionUpdate =
-    millis();
+  lastMotionUpdate = millis();
 
-  Serial.print(
-    "[MQTT] Motion from C3: "
-  );
+  Serial.print("[MQTT] Motion from C3: ");
 
-  Serial.println(
-    levelToText(motionLevel)
-  );
+  Serial.println(levelToText(motionLevel));
 }
 
 // ============================================================
-// 18. RECEIVE MOTION DIRECTLY THROUGH UDP
+// 22. MOTION THROUGH DIRECT UDP
 // ============================================================
 
 void receiveDirectMotion()
 {
-  int packetSize =
-    udp.parsePacket();
+  int packetSize = udp.parsePacket();
 
   if (packetSize <= 0)
   {
@@ -559,22 +693,18 @@ void receiveDirectMotion()
 
   char buffer[128];
 
-  int length =
-    udp.read(
-      buffer,
-      sizeof(buffer) - 1
-    );
+  int length = udp.read(buffer, sizeof(buffer) - 1);
 
   if (length <= 0)
   {
     return;
   }
 
-  buffer[length] =
-    '\0';
+  buffer[length] = '\0';
 
-  String packet =
-    String(buffer);
+  String packet = String(buffer);
+
+  packet.trim();
 
   /*
    * Expected:
@@ -586,114 +716,62 @@ void receiveDirectMotion()
    * DANGER,25.4,3.10,4.50
    */
 
-  int comma1 =
-    packet.indexOf(',');
+  int comma1 = packet.indexOf(',');
 
-  int comma2 =
-    packet.indexOf(
-      ',',
-      comma1 + 1
-    );
+  int comma2 = packet.indexOf(',', comma1 + 1);
 
-  int comma3 =
-    packet.indexOf(
-      ',',
-      comma2 + 1
-    );
+  int comma3 = packet.indexOf(',', comma2 + 1);
 
-  // Invalid packet
-  if (
-    comma1 < 0 ||
-    comma2 < 0 ||
-    comma3 < 0
-  )
+  if (comma1 < 0 || comma2 < 0 || comma3 < 0)
   {
-    Serial.print(
-      "[DIRECT] Invalid packet: "
-    );
+    Serial.print("[DIRECT] Invalid packet: ");
 
     Serial.println(packet);
 
     return;
   }
 
-  String statusText =
-    packet.substring(
-      0,
-      comma1
-    );
+  String statusText = packet.substring(0, comma1);
 
-  String tiltText =
-    packet.substring(
-      comma1 + 1,
-      comma2
-    );
+  String tiltText = packet.substring(comma1 + 1, comma2);
 
-  String vibrationText =
-    packet.substring(
-      comma2 + 1,
-      comma3
-    );
+  String vibrationText = packet.substring(comma2 + 1, comma3);
 
-  String impactText =
-    packet.substring(
-      comma3 + 1
-    );
+  String impactText = packet.substring(comma3 + 1);
 
-  motionLevel =
-    textToLevel(statusText);
+  motionLevel = textToLevel(statusText);
 
-  motionTilt =
-    tiltText.toFloat();
+  motionTilt = tiltText.toFloat();
 
-  motionVibration =
-    vibrationText.toFloat();
+  motionVibration = vibrationText.toFloat();
 
-  motionImpact =
-    impactText.toFloat();
+  motionImpact = impactText.toFloat();
 
-  motionSource =
-    "DIRECT";
+  motionSource = "DIRECT";
 
-  lastMotionUpdate =
-    millis();
+  lastMotionUpdate = millis();
 
   Serial.println();
-  Serial.print(
-    "[DIRECT] Motion from C3: "
-  );
 
-  Serial.print(
-    levelToText(motionLevel)
-  );
+  Serial.print("[DIRECT] Motion: ");
 
-  Serial.print(
-    " | tilt="
-  );
+  Serial.print(levelToText(motionLevel));
 
-  Serial.print(
-    motionTilt
-  );
+  Serial.print(" | tilt=");
 
-  Serial.print(
-    " | vibration="
-  );
+  Serial.print(motionTilt);
 
-  Serial.print(
-    motionVibration
-  );
+  Serial.print(" | vibration=");
 
-  Serial.print(
-    " | impact="
-  );
+  Serial.print(motionVibration);
 
-  Serial.println(
-    motionImpact
-  );
+  Serial.print(" | impact=");
+
+  Serial.println(motionImpact);
 }
 
 // ============================================================
-// 19. MOTION TIMEOUT
+// 23. MOTION TIMEOUT
 // ============================================================
 
 void checkMotionTimeout()
@@ -703,10 +781,7 @@ void checkMotionTimeout()
     return;
   }
 
-  if (
-    millis() - lastMotionUpdate <=
-    MOTION_TIMEOUT_MS
-  )
+  if (millis() - lastMotionUpdate <= MOTION_TIMEOUT_MS)
   {
     return;
   }
@@ -717,77 +792,44 @@ void checkMotionTimeout()
 
   lastMotionUpdate = 0;
 
-  Serial.println(
-    "[MOTION] C3 data timeout."
-  );
+  Serial.println("[MOTION] C3 data timeout -> SAFE");
 }
 
 // ============================================================
-// 20. OVERALL SYSTEM LEVEL
+// 24. OVERALL SYSTEM LEVEL
 // ============================================================
 
 void updateSystemLevel()
 {
-  /*
-   * Take the highest level from:
-   *
-   * temperature
-   * gas
-   * water
-   * motion
-   */
+  systemLevel = temperatureLevel;
 
-  systemLevel =
-    temperatureLevel;
-
-  if (
-    gasLevel >
-    systemLevel
-  )
+  if (gasLevel > systemLevel)
   {
-    systemLevel =
-      gasLevel;
+    systemLevel = gasLevel;
   }
 
-  if (
-    waterLevel >
-    systemLevel
-  )
+  if (waterLevel > systemLevel)
   {
-    systemLevel =
-      waterLevel;
+    systemLevel = waterLevel;
   }
 
-  if (
-    motionLevel >
-    systemLevel
-  )
+  if (motionLevel > systemLevel)
   {
-    systemLevel =
-      motionLevel;
+    systemLevel = motionLevel;
   }
 }
 
 // ============================================================
-// 21. LED
+// 25. LED
 // ============================================================
 
 void turnOffAllLEDs()
 {
-  digitalWrite(
-    LED_GREEN_PIN,
-    LOW
-  );
+  digitalWrite(LED_GREEN_PIN, LOW);
 
-  digitalWrite(
-    LED_YELLOW_PIN,
-    LOW
-  );
+  digitalWrite(LED_YELLOW_PIN, LOW);
 
-  digitalWrite(
-    LED_RED_PIN,
-    LOW
-  );
+  digitalWrite(LED_RED_PIN, LOW);
 }
 
 void updateLED()
@@ -796,35 +838,23 @@ void updateLED()
 
   if (systemLevel == SAFE)
   {
-    digitalWrite(
-      LED_GREEN_PIN,
-      HIGH
-    );
+    digitalWrite(LED_GREEN_PIN, HIGH);
 
     return;
   }
 
-  if (
-    systemLevel ==
-    WARNING
-  )
+  if (systemLevel == WARNING)
   {
-    digitalWrite(
-      LED_YELLOW_PIN,
-      HIGH
-    );
+    digitalWrite(LED_YELLOW_PIN, HIGH);
 
     return;
   }
 
-  digitalWrite(
-    LED_RED_PIN,
-    HIGH
-  );
+  digitalWrite(LED_RED_PIN, HIGH);
 }
 
 // ============================================================
-// 22. BUZZER
+// 26. BUZZER
 // ============================================================
 
 void publishBuzzerState()
@@ -834,109 +864,68 @@ void publishBuzzerState()
     return;
   }
 
-  if (buzzerOn)
-  {
-    mqttClient.publish(
-      TOPIC_BUZZER_STATE,
-      "ON",
-      true
-    );
-  }
-  else
-  {
-    mqttClient.publish(
-      TOPIC_BUZZER_STATE,
-      "OFF",
-      true
-    );
-  }
+  mqttClient.publish(TOPIC_BUZZER_STATE, buzzerOn ? "ON" : "OFF", true);
 }
 
 void updateBuzzer()
 {
-  bool automaticDanger =
-    (systemLevel == DANGER);
-
-  if (
-    automaticDanger ||
-    manualBuzzerOn
-  )
-  {
-    buzzerOn = true;
-  }
-  else
+  // Silent test mode.
+  if (!ENABLE_BUZZER)
   {
     buzzerOn = false;
+
+    digitalWrite(BUZZER_PIN, LOW);
+
+    return;
   }
 
-  digitalWrite(
-    BUZZER_PIN,
-    buzzerOn ? HIGH : LOW
-  );
+  bool automaticDanger = (systemLevel == DANGER);
 
-  if (
-    buzzerOn !=
-    previousBuzzerState
-  )
+  buzzerOn = automaticDanger || manualBuzzerOn;
+
+  digitalWrite(BUZZER_PIN, buzzerOn ? HIGH : LOW);
+
+  if (buzzerOn != previousBuzzerState)
   {
-    previousBuzzerState =
-      buzzerOn;
+    previousBuzzerState = buzzerOn;
 
     publishBuzzerState();
   }
 }
 
 // ============================================================
-// 23. MQTT CALLBACK
+// 27. MQTT CALLBACK
 // ============================================================
 
-void mqttCallback(
-  char* topic,
-  byte* payload,
-  unsigned int length
-)
+void mqttCallback(char* topic, byte* payload, unsigned int length)
 {
-  String topicText =
-    String(topic);
+  String topicText = String(topic);
 
   String message = "";
 
-  for (
-    unsigned int i = 0;
-    i < length;
-    i++
-  )
+  for (unsigned int i = 0; i < length; i++)
   {
-    message +=
-      (char)payload[i];
+    message += (char)payload[i];
   }
 
   message.trim();
 
-  // --------------------------------------------------------
-  // Motion state from C3
-  // --------------------------------------------------------
+  // --------------------------
+  // C3 motion
+  // --------------------------
 
-  if (
-    topicText ==
-    TOPIC_MOTION_STATE
-  )
+  if (topicText == TOPIC_MOTION_STATE)
   {
-    updateMotionFromMQTT(
-      message
-    );
+    updateMotionFromMQTT(message);
 
     return;
   }
 
-  // --------------------------------------------------------
-  // Manual buzzer command
-  // --------------------------------------------------------
+  // --------------------------
+  // Manual buzzer
+  // --------------------------
 
-  if (
-    topicText ==
-    TOPIC_BUZZER_COMMAND
-  )
+  if (topicText == TOPIC_BUZZER_COMMAND)
   {
     message.toUpperCase();
 
@@ -944,189 +933,172 @@ void mqttCallback(
     {
       manualBuzzerOn = true;
 
-      Serial.println(
-        "[MQTT] Manual buzzer ON"
-      );
+      Serial.println("[MQTT] Manual buzzer ON");
     }
-    else if (
-      message == "OFF"
-    )
+
+    else if (message == "OFF")
     {
       manualBuzzerOn = false;
 
-      Serial.println(
-        "[MQTT] Manual buzzer OFF"
-      );
+      Serial.println("[MQTT] Manual buzzer OFF");
     }
   }
 }
 
 // ============================================================
-// 24. HOME WIFI
+// 28. START AP + HOME WIFI
 // ============================================================
 
 void startHomeWiFi()
 {
+  Serial.println();
+
+  Serial.println("[WiFi] Starting AP + STA...");
+
   /*
-   * IMPORTANT:
+   * AP:
+   * C3 fallback network
    *
-   * AP + STA simultaneously.
-   *
-   * AP  = private WiFi for C3 fallback.
-   * STA = home WiFi for MQTT.
+   * STA:
+   * HOME WiFi for MQTT
    */
 
-  WiFi.mode(
-    WIFI_AP_STA
-  );
+  WiFi.mode(WIFI_AP_STA);
 
   WiFi.persistent(false);
+
   WiFi.setAutoReconnect(true);
 
-  // --------------------------------------------------------
-  // Start DIRECT AP first.
-  // --------------------------------------------------------
+  // --------------------------
+  // DIRECT AP
+  // --------------------------
 
-  WiFi.softAPConfig(
-    DIRECT_AP_IP,
-    DIRECT_AP_GATEWAY,
-    DIRECT_AP_SUBNET
-  );
+  WiFi.softAPConfig(DIRECT_AP_IP, DIRECT_AP_GATEWAY, DIRECT_AP_SUBNET);
 
-  bool apStarted =
-    WiFi.softAP(
-      DIRECT_AP_SSID,
-      DIRECT_AP_PASSWORD
-    );
+  bool apStarted = WiFi.softAP(DIRECT_AP_SSID, DIRECT_AP_PASSWORD);
 
   if (apStarted)
   {
-    Serial.println(
-      "[DIRECT] S3 fallback AP started."
-    );
+    Serial.println("[DIRECT] Fallback AP started.");
 
-    Serial.print(
-      "[DIRECT] SSID: "
-    );
+    Serial.print("[DIRECT] SSID: ");
 
-    Serial.println(
-      DIRECT_AP_SSID
-    );
+    Serial.println(DIRECT_AP_SSID);
 
-    Serial.print(
-      "[DIRECT] AP IP: "
-    );
+    Serial.print("[DIRECT] IP: ");
 
-    Serial.println(
-      WiFi.softAPIP()
-    );
+    Serial.println(WiFi.softAPIP());
   }
   else
   {
-    Serial.println(
-      "[DIRECT] Failed to start AP."
-    );
+    Serial.println("[DIRECT] Failed to start AP.");
   }
 
-  // UDP server listens for C3.
-  udp.begin(
-    DIRECT_UDP_PORT
-  );
+  // --------------------------
+  // UDP
+  // --------------------------
 
-  Serial.print(
-    "[DIRECT] UDP port: "
-  );
+  bool udpStarted = udp.begin(DIRECT_UDP_PORT);
 
-  Serial.println(
-    DIRECT_UDP_PORT
-  );
+  Serial.print("[DIRECT] UDP: ");
 
-  // --------------------------------------------------------
-  // Then connect STA to home WiFi.
-  // --------------------------------------------------------
+  Serial.println(udpStarted ? "OK" : "FAILED");
 
-  WiFi.begin(
-    HOME_WIFI_SSID,
-    HOME_WIFI_PASSWORD
-  );
+  Serial.print("[DIRECT] UDP port: ");
 
-  Serial.print(
-    "[WiFi] Connecting S3 to HOME WiFi: "
-  );
+  Serial.println(DIRECT_UDP_PORT);
 
-  Serial.println(
-    HOME_WIFI_SSID
-  );
-}
+  // --------------------------
+  // HOME WIFI
+  // --------------------------
 
-void maintainHomeWiFi()
-{
-  if (
-    WiFi.status() ==
-    WL_CONNECTED
-  )
-  {
-    if (!homeWiFiWasConnected)
-    {
-      homeWiFiWasConnected = true;
+  Serial.println();
 
-      Serial.print("[WiFi] HOME connected. IP: ");
-      Serial.println(WiFi.localIP());
+  Serial.print("[WiFi] Connecting HOME: ");
 
-      Serial.print("[WiFi] RSSI: ");
-      Serial.println(WiFi.RSSI());
-
-      Serial.print("[MQTT] Broker: ");
-      Serial.print(MQTT_HOST);
-      Serial.print(":");
-      Serial.println(MQTT_PORT);
-    }
-
-    return;
-  }
-
-  if (homeWiFiWasConnected)
-  {
-    homeWiFiWasConnected = false;
-    Serial.println("[WiFi] HOME disconnected. Direct AP remains active.");
-  }
-
-  unsigned long now =
-    millis();
-
-  if (
-    now - lastHomeWiFiRetry <
-    10000
-  )
-  {
-    return;
-  }
-
-  lastHomeWiFiRetry =
-    now;
-
-  Serial.println(
-    "[WiFi] Retry HOME WiFi..."
-  );
+  Serial.println(HOME_WIFI_SSID);
 
   /*
-   * Only STA reconnects.
-   * The S3 fallback AP stays active.
+   * IMPORTANT:
+   *
+   * WiFi.begin() is called
+   * only ONCE.
    */
 
-  WiFi.reconnect();
+  WiFi.begin(HOME_WIFI_SSID, HOME_WIFI_PASSWORD);
 }
 
 // ============================================================
-// 25. MQTT
+// 29. MONITOR HOME WIFI
+// ============================================================
+
+void maintainHomeWiFi()
+{
+  bool connected = (WiFi.status() == WL_CONNECTED);
+
+  if (connected && !homeWiFiWasConnected)
+  {
+    homeWiFiWasConnected = true;
+
+    Serial.println();
+
+    Serial.println("[WiFi] HOME CONNECTED");
+
+    Serial.print("[WiFi] STA IP: ");
+
+    Serial.println(WiFi.localIP());
+
+    Serial.print("[WiFi] RSSI: ");
+
+    Serial.print(WiFi.RSSI());
+
+    Serial.println(" dBm");
+
+    Serial.print("[DIRECT] AP IP: ");
+
+    Serial.println(WiFi.softAPIP());
+  }
+
+  if (!connected && homeWiFiWasConnected)
+  {
+    homeWiFiWasConnected = false;
+
+    Serial.println();
+
+    Serial.println("[WiFi] HOME LOST");
+
+    Serial.println("[DIRECT] Fallback AP remains active");
+  }
+
+  unsigned long now = millis();
+
+  if (!connected && now - lastNetworkStatusLog >= NETWORK_LOG_INTERVAL_MS)
+  {
+    lastNetworkStatusLog = now;
+
+    Serial.print("[WiFi] HOME status: ");
+
+    Serial.println(wifiStatusToText(WiFi.status()));
+  }
+
+  /*
+   * DO NOT:
+   *
+   * WiFi.begin()
+   * WiFi.reconnect()
+   * WiFi.disconnect()
+   *
+   * here.
+   */
+}
+
+// ============================================================
+// 30. MQTT
 // ============================================================
 
 void maintainMQTT()
 {
-  if (
-    WiFi.status() !=
-    WL_CONNECTED
-  )
+  if (WiFi.status() != WL_CONNECTED)
   {
     return;
   }
@@ -1136,91 +1108,78 @@ void maintainMQTT()
     return;
   }
 
-  unsigned long now =
-    millis();
+  unsigned long now = millis();
 
-  if (
-    now - lastMQTTRetry <
-    5000
-  )
+  if (now - lastMQTTRetry < MQTT_RETRY_INTERVAL_MS)
   {
     return;
   }
 
-  lastMQTTRetry =
-    now;
+  lastMQTTRetry = now;
 
-  Serial.println(
-    "[MQTT] Connecting..."
-  );
+  Serial.print("[MQTT] Connecting to ");
+
+  Serial.print(MQTT_HOST);
+
+  Serial.print(":");
+
+  Serial.println(MQTT_PORT);
 
   char clientId[48];
 
-  snprintf(
-    clientId,
-    sizeof(clientId),
-    "%s-%04X",
-    DEVICE_ID,
-    (uint16_t)(ESP.getEfuseMac() & 0xFFFF)
-  );
+  snprintf(clientId, sizeof(clientId), "%s-%04X", DEVICE_ID,
+           (uint16_t)(ESP.getEfuseMac() & 0xFFFF));
 
-  bool success;
+  bool success = false;
 
   if (strlen(MQTT_USER) > 0)
   {
-    success = mqttClient.connect(
-      clientId,
-      MQTT_USER,
-      MQTT_PASSWORD,
-      TOPIC_STATUS,
-      1,
-      true,
-      "offline"
-    );
+    success =
+        mqttClient.connect(clientId, MQTT_USER, MQTT_PASSWORD, TOPIC_STATUS, 1, true, "offline");
   }
   else
   {
-    success = mqttClient.connect(
-      clientId,
-      TOPIC_STATUS,
-      1,
-      true,
-      "offline"
-    );
+    success = mqttClient.connect(clientId, TOPIC_STATUS, 1, true, "offline");
   }
 
   if (!success)
   {
-    Serial.println(
-      "[MQTT] Connection failed"
-    );
+    int state = mqttClient.state();
+
+    Serial.print("[MQTT] Failed state=");
+
+    Serial.print(state);
+
+    Serial.print(" (");
+
+    Serial.print(mqttStateToText(state));
+
+    Serial.println(")");
 
     return;
   }
 
-  Serial.println(
-    "[MQTT] Connected"
-  );
+  Serial.println("[MQTT] Connected");
 
-  mqttClient.publish(
-    TOPIC_STATUS,
-    "online",
-    true
-  );
+  mqttClient.publish(TOPIC_STATUS, "online", true);
 
-  mqttClient.subscribe(
-    TOPIC_BUZZER_COMMAND
-  );
+  bool motionSubscribed = mqttClient.subscribe(TOPIC_MOTION_STATE);
 
-  mqttClient.subscribe(
-    TOPIC_MOTION_STATE
-  );
+  bool commandSubscribed = mqttClient.subscribe(TOPIC_BUZZER_COMMAND);
+
+  Serial.print("[MQTT] Motion subscribe: ");
+
+  Serial.println(motionSubscribed ? "OK" : "FAILED");
+
+  Serial.print("[MQTT] Command subscribe: ");
+
+  Serial.println(commandSubscribed ? "OK" : "FAILED");
 
   publishBuzzerState();
 }
 
 // ============================================================
-// 26. PUBLISH MAIN TELEMETRY
+// 31. TELEMETRY
 // ============================================================
 
 void publishTelemetry()
@@ -1233,314 +1192,318 @@ void publishTelemetry()
   String data = "{";
 
   data += "\"deviceId\":\"";
+
   data += DEVICE_ID;
+
   data += "\",";
 
   data += "\"temperature\":";
+
   data += String(temperature, 1);
+
   data += ",";
 
   data += "\"humidity\":";
+
   data += String(humidity, 1);
+
   data += ",";
 
   data += "\"gasRaw\":";
+
   data += String(gasRaw);
+
   data += ",";
 
   data += "\"gasFiltered\":";
+
   data += String(gasFiltered);
+
   data += ",";
 
   data += "\"distanceCm\":";
+
   data += String(distanceCm, 1);
+
   data += ",";
 
   data += "\"waterLevelCm\":";
+
   data += String(waterLevelCm, 1);
+
   data += ",";
 
   data += "\"waterLevelPercent\":";
+
   data += String(waterLevelPercent, 1);
+
   data += ",";
 
   data += "\"motionStatus\":\"";
+
   data += levelToText(motionLevel);
+
   data += "\",";
 
   data += "\"motionSource\":\"";
+
   data += motionSource;
+
   data += "\",";
 
   data += "\"motionTilt\":";
+
   data += String(motionTilt, 1);
+
   data += ",";
 
   data += "\"motionVibration\":";
+
   data += String(motionVibration, 2);
+
   data += ",";
 
   data += "\"motionImpact\":";
+
   data += String(motionImpact, 2);
+
   data += ",";
 
   data += "\"systemStatus\":\"";
+
   data += levelToText(systemLevel);
+
   data += "\",";
 
   data += "\"buzzer\":";
 
-  if (buzzerOn)
-  {
-    data += "true";
-  }
-  else
-  {
-    data += "false";
-  }
+  data += buzzerOn ? "true" : "false";
 
   data += "}";
 
   Serial.print("[MQTT] Publish telemetry: ");
+
   Serial.println(data);
 
-  mqttClient.publish(
-    TOPIC_TELEMETRY,
-    data.c_str()
-  );
+  mqttClient.publish(TOPIC_TELEMETRY, data.c_str());
 }
 
 // ============================================================
-// 27. SERIAL MONITOR
+// 32. SERIAL STATUS
 // ============================================================
 
 void printSystemData()
 {
   Serial.println();
-  Serial.println(
-    "================================"
-  );
 
-  Serial.print("Temperature : ");
+  Serial.println("================================");
+
+  Serial.print("Temperature     : ");
+
   Serial.print(temperature);
-  Serial.print(" C -> ");
-  Serial.println(
-    levelToText(temperatureLevel)
-  );
 
-  Serial.print("Humidity    : ");
+  Serial.print(" C -> ");
+
+  Serial.println(levelToText(temperatureLevel));
+
+  Serial.print("Humidity        : ");
+
   Serial.print(humidity);
+
   Serial.println(" %");
 
-  Serial.print("MQ-2 raw    : ");
+  Serial.print("MQ-2 raw        : ");
+
   Serial.print(gasRaw);
+
   Serial.println(" ADC");
 
-  Serial.print("MQ-2 avg    : ");
+  Serial.print("MQ-2 avg        : ");
+
   Serial.print(gasFiltered);
+
   Serial.print(" ADC -> ");
-  Serial.println(
-    levelToText(gasLevel)
-  );
 
-  Serial.print("Water       : ");
+  Serial.println(levelToText(gasLevel));
+
+  // --------------------------
+  // WATER
+  // --------------------------
+
+  Serial.print("Water distance  : ");
+
+  Serial.print(distanceCm);
+
+  Serial.println(" cm");
+
+  Serial.print("Water level     : ");
+
   Serial.print(waterLevelCm);
-  Serial.print(" cm (");
-  Serial.print(waterLevelPercent);
-  Serial.print("%) -> ");
-  Serial.println(
-    levelToText(waterLevel)
-  );
 
-  Serial.print("Motion      : ");
-  Serial.print(
-    levelToText(motionLevel)
-  );
+  Serial.print(" cm (");
+
+  Serial.print(waterLevelPercent);
+
+  Serial.print("%) -> ");
+
+  Serial.println(levelToText(waterLevel));
+
+  Serial.print("Water sensor min : ");
+
+  Serial.print(MIN_VALID_DISTANCE_CM);
+
+  Serial.print(" cm | Max level: ");
+
+  Serial.print(MAX_MEASURABLE_WATER_LEVEL_CM);
+
+  Serial.println(" cm");
+
+  // --------------------------
+  // MOTION
+  // --------------------------
+
+  Serial.print("Motion          : ");
+
+  Serial.print(levelToText(motionLevel));
 
   Serial.print(" via ");
-  Serial.println(
-    motionSource
-  );
 
-  Serial.print("SYSTEM      : ");
-  Serial.println(
-    levelToText(systemLevel)
-  );
+  Serial.println(motionSource);
 
-  Serial.print("BUZZER      : ");
+  // --------------------------
+  // SYSTEM
+  // --------------------------
 
-  if (buzzerOn)
+  Serial.print("SYSTEM          : ");
+
+  Serial.println(levelToText(systemLevel));
+
+  Serial.print("BUZZER          : ");
+
+  if (!ENABLE_BUZZER)
   {
-    Serial.println("ON");
+    Serial.println("DISABLED");
   }
   else
   {
-    Serial.println("OFF");
+    Serial.println(buzzerOn ? "ON" : "OFF");
   }
 
-  Serial.print("HOME WiFi   : ");
+  Serial.print("HOME WiFi       : ");
 
-  if (
-    WiFi.status() ==
-    WL_CONNECTED
-  )
-  {
-    Serial.println("CONNECTED");
-  }
-  else
-  {
-    Serial.println("DISCONNECTED");
-  }
+  Serial.println(WiFi.status() == WL_CONNECTED ? "CONNECTED" : "DISCONNECTED");
 
-  Serial.print("DIRECT AP   : ");
-  Serial.println(
-    DIRECT_AP_SSID
-  );
+  Serial.print("MQTT            : ");
 
-  Serial.print("DIRECT IP   : ");
-  Serial.println(
-    WiFi.softAPIP()
-  );
+  Serial.print(mqttStateToText(mqttClient.state()));
 
-  Serial.println(
-    "================================"
-  );
+  Serial.print(" | state=");
+
+  Serial.println(mqttClient.state());
+
+  Serial.print("DIRECT AP       : ");
+
+  Serial.println(DIRECT_AP_SSID);
+
+  Serial.print("DIRECT IP       : ");
+
+  Serial.println(WiFi.softAPIP());
+
+  Serial.println("================================");
 }
 
 // ============================================================
-// 28. SETUP
+// 33. SETUP
 // ============================================================
 
 void setup()
 {
-  Serial.begin(9600);
+  Serial.begin(115200);
+
   delay(1500);
 
   Serial.println();
+
   Serial.println("==============================");
+
   Serial.println("ESP32-S3 STARTING...");
+
   Serial.println("==============================");
 
-  // --------------------------------------------------------
-  // PINS
-  // --------------------------------------------------------
+  // --------------------------
+  // Pins
+  // --------------------------
 
-  pinMode(
-    MQ2_PIN,
-    INPUT
-  );
+  pinMode(MQ2_PIN, INPUT);
 
-  pinMode(
-    TRIG_PIN,
-    OUTPUT
-  );
+  pinMode(TRIG_PIN, OUTPUT);
 
-  pinMode(
-    ECHO_PIN,
-    INPUT
-  );
+  pinMode(ECHO_PIN, INPUT);
 
-  pinMode(
-    BUZZER_PIN,
-    OUTPUT
-  );
+  pinMode(BUZZER_PIN, OUTPUT);
 
-  pinMode(
-    LED_GREEN_PIN,
-    OUTPUT
-  );
+  pinMode(LED_GREEN_PIN, OUTPUT);
 
-  pinMode(
-    LED_YELLOW_PIN,
-    OUTPUT
-  );
+  pinMode(LED_YELLOW_PIN, OUTPUT);
 
-  pinMode(
-    LED_RED_PIN,
-    OUTPUT
-  );
+  pinMode(LED_RED_PIN, OUTPUT);
 
-  // --------------------------------------------------------
-  // SAFE STARTUP
-  // --------------------------------------------------------
+  // --------------------------
+  // Safe startup
+  // --------------------------
 
-  digitalWrite(
-    BUZZER_PIN,
-    LOW
-  );
+  digitalWrite(BUZZER_PIN, LOW);
 
-  digitalWrite(
-    LED_GREEN_PIN,
-    HIGH
-  );
+  digitalWrite(LED_GREEN_PIN, HIGH);
 
-  digitalWrite(
-    LED_YELLOW_PIN,
-    LOW
-  );
+  digitalWrite(LED_YELLOW_PIN, LOW);
 
-  digitalWrite(
-    LED_RED_PIN,
-    LOW
-  );
+  digitalWrite(LED_RED_PIN, LOW);
 
-  // --------------------------------------------------------
-  // SENSOR
-  // --------------------------------------------------------
+  // --------------------------
+  // Sensors
+  // --------------------------
 
   analogReadResolution(12);
 
   dht.begin();
 
-  // --------------------------------------------------------
+  // --------------------------
   // MQTT
-  // --------------------------------------------------------
+  // --------------------------
 
-  mqttClient.setServer(
-    MQTT_HOST,
-    MQTT_PORT
-  );
+  mqttClient.setServer(MQTT_HOST, MQTT_PORT);
 
-  mqttClient.setCallback(
-    mqttCallback
-  );
+  mqttClient.setCallback(mqttCallback);
 
-  mqttClient.setBufferSize(
-    1024
-  );
+  mqttClient.setBufferSize(1024);
 
-  mqttClient.setSocketTimeout(
-    1
-  );
+  mqttClient.setSocketTimeout(1);
 
-  // --------------------------------------------------------
-  // AP + HOME WIFI
-  // --------------------------------------------------------
+  // --------------------------
+  // AP + STA
+  // --------------------------
 
   startHomeWiFi();
 
   Serial.println();
-  Serial.println(
-    "[MAIN] ESP32-S3 started."
-  );
 
-  Serial.println(
-    "[MAIN] Direct C3 fallback is always available."
-  );
+  Serial.println("[MAIN] ESP32-S3 started.");
+
+  Serial.println("[MAIN] Direct C3 fallback is available.");
 }
 
 // ============================================================
-// 29. LOOP
+// 34. LOOP
 // ============================================================
 
 void loop()
 {
-  unsigned long now =
-    millis();
+  unsigned long now = millis();
 
-  /*
-   * 1. Network.
-   */
+  // --------------------------
+  // 1. Network
+  // --------------------------
 
   maintainHomeWiFi();
 
@@ -1551,60 +1514,54 @@ void loop()
     mqttClient.loop();
   }
 
-  /*
-   * 2. Always listen for direct C3 packets.
-   *
-   * This works even when HOME WiFi / MQTT is down.
-   */
+  // --------------------------
+  // 2. C3 direct fallback
+  // --------------------------
 
   receiveDirectMotion();
 
   checkMotionTimeout();
 
-  /*
-   * 3. Read local sensors every 2 seconds.
-   */
+  // --------------------------
+  // 3. Read sensors every 2 s
+  // --------------------------
 
-  if (
-    now - lastLocalSensorRead >=
-    2000
-  )
+  if (now - lastLocalSensorRead >= 2000)
   {
     lastLocalSensorRead = now;
 
+    // Read sensor values
     readAndClassifyLocalSensors();
 
+    // Recalculate immediately
+    updateSystemLevel();
+
+    // Update output immediately
+    updateLED();
+    updateBuzzer();
+
+    // Print newest values
     printSystemData();
   }
 
-  /*
-   * 4. Recalculate overall level all the time.
-   */
+  // --------------------------
+  // 4. Keep output updated
+  // --------------------------
 
   updateSystemLevel();
-
   updateLED();
-
   updateBuzzer();
 
-  /*
-   * 5. Send combined telemetry every 2 seconds
-   * only when MQTT exists.
-   */
+  // --------------------------
+  // 5. Telemetry every 2 s
+  // --------------------------
 
-  if (
-    now - lastTelemetry >=
-    2000
-  )
+  if (now - lastTelemetry >= 2000)
   {
     lastTelemetry = now;
 
     publishTelemetry();
   }
-
-  /*
-   * Short delay only to reduce CPU spinning.
-   */
 
   delay(10);
 }

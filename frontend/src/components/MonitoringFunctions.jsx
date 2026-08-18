@@ -1,4 +1,4 @@
-import { SENSOR_THRESHOLDS } from '../config/thresholds';
+import { getWaterAlarmLevel, SENSOR_THRESHOLDS } from '../config/thresholds';
 
 function formatValue(value, fractionDigits = 1) {
   if (value === null || value === undefined) {
@@ -66,7 +66,7 @@ function SensorMeter({ value, maximumValue, tone }) {
 export function MonitoringFunctions({ latest }) {
   const temperatureTone = getTone(latest?.temperature, SENSOR_THRESHOLDS.temperature);
   const gasTone = getTone(latest?.gas_raw, SENSOR_THRESHOLDS.gas);
-  const waterTone = getTone(latest?.water_level_cm, SENSOR_THRESHOLDS.water);
+  const waterTone = getWaterAlarmLevel(latest);
 
   return (
     <section className="section-block" id="monitoring" aria-labelledby="monitoring-title">
@@ -139,10 +139,15 @@ export function MonitoringFunctions({ latest }) {
               <span className={waterTone === 'danger' ? 'led-active led-red' : 'led-red'}>R</span>
             </div>
           </div>
-          <SensorMeter value={latest?.water_level_cm} maximumValue={50} tone={waterTone} />
+          <SensorMeter
+            value={latest?.water_level_cm}
+            maximumValue={SENSOR_THRESHOLDS.water.maximumLevel}
+            tone={waterTone}
+          />
           <div className={`function-state state-${waterTone}`}>{getToneLabel(waterTone)}</div>
           <p className="function-note">
-            JSN-SR04T · LED xanh/vàng/đỏ theo ngưỡng {SENSOR_THRESHOLDS.water.warning}/{SENSOR_THRESHOLDS.water.danger} cm.
+            JSN-SR04T · Khoảng cách trên 40 cm: an toàn; trên 30 đến 40 cm: cảnh báo;
+            từ 23 đến 30 cm: nguy hiểm.
           </p>
         </article>
       </div>

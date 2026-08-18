@@ -1,4 +1,4 @@
-import { SENSOR_THRESHOLDS } from '../config/thresholds';
+import { getWaterAlarmLevel, SENSOR_THRESHOLDS } from '../config/thresholds';
 
 const PREDICTION_MINUTES = 5;
 const MAXIMUM_HISTORY_POINTS = 6;
@@ -65,14 +65,14 @@ function getPredictedRisk(latestReading, predictedTemperature) {
 
   const status = String(latestReading.status ?? '').toLowerCase();
   const gasLevel = latestReading.gas_raw ?? 0;
-  const waterLevel = latestReading.water_level_cm ?? 0;
+  const waterAlarmLevel = getWaterAlarmLevel(latestReading);
 
   if (
     status === 'danger' ||
     status === 'critical' ||
     predictedTemperature >= SENSOR_THRESHOLDS.temperature.danger ||
     gasLevel >= SENSOR_THRESHOLDS.gas.danger ||
-    waterLevel >= SENSOR_THRESHOLDS.water.danger
+    waterAlarmLevel === 'danger'
   ) {
     return { label: 'NGUY HIỂM', tone: 'danger' };
   }
@@ -81,7 +81,7 @@ function getPredictedRisk(latestReading, predictedTemperature) {
     status === 'warning' ||
     predictedTemperature >= SENSOR_THRESHOLDS.temperature.warning ||
     gasLevel >= SENSOR_THRESHOLDS.gas.warning ||
-    waterLevel >= SENSOR_THRESHOLDS.water.warning
+    waterAlarmLevel === 'warning'
   ) {
     return { label: 'CẢNH BÁO', tone: 'warning' };
   }

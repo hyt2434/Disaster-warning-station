@@ -188,7 +188,7 @@ Thực hiện riêng cho từng board:
 4. Cài các thư viện ở mục 3 bằng `Library Manager`.
 5. Sửa Wi-Fi và `MQTT_HOST` trước khi upload.
 6. Nhấn `Verify`, sau đó nhấn `Upload`.
-7. Mở `Serial Monitor` và chọn `9600 baud`.
+7. Mở `Serial Monitor`: Main dùng `115200 baud`, F7 dùng `9600 baud`.
 
 Không mở hai sketch trong cùng một cửa sổ Arduino IDE và không upload nhầm firmware sang board còn lại.
 
@@ -383,7 +383,7 @@ Upload the S3 firmware first.
 Open Serial Monitor at:
 
 ```text
-9600 baud
+115200 baud
 ```
 
 You should see something similar to:
@@ -689,12 +689,13 @@ MQ-2 values here are ADC values, not ppm.
 ## Water level
 
 ```text
-< 20 cm        SAFE
-20 - <40 cm    WARNING
->= 40 cm       DANGER
+Distance > 40 cm          -> Water < 60 cm       -> SAFE
+30 cm < Distance <= 40 cm -> 60 cm <= Water < 70 cm -> WARNING
+23 cm <= Distance <= 30 cm -> 70 cm <= Water <= 77 cm -> DANGER
 ```
 
-Change the water thresholds to fit the actual height of your physical model.
+JSN-SR04T được đặt cao 100 cm. Khoảng cách dưới 23 cm được clamp về 23 cm,
+vì vậy mức nước cao nhất đo trực tiếp là 77 cm và thuộc vùng DANGER.
 
 ---
 
@@ -1207,15 +1208,15 @@ Water level       = 100 - 75 = 25 cm
 The current demo thresholds are:
 
 ```cpp
-WATER_WARNING = 20.0;
-WATER_DANGER  = 40.0;
+WATER_WARNING_DISTANCE_CM = 40.0;
+WATER_DANGER_DISTANCE_CM  = 30.0;
 ```
 
-| Water level | Level | If this is the highest system level |
-|---:|---|---|
-| `< 20 cm` | SAFE | Green LED |
-| `20 cm to < 40 cm` | WARNING | Yellow LED |
-| `>= 40 cm` | DANGER | Red LED + Buzzer |
+| Distance | Water level | Level | If this is the highest system level |
+|---:|---:|---|---|
+| `> 40 cm` | `< 60 cm` | SAFE | Green LED |
+| `> 30 cm` to `40 cm` | `60 cm` to `< 70 cm` | WARNING | Yellow LED |
+| `23 cm` to `30 cm` | `70 cm` to `77 cm` | DANGER | Red LED + Buzzer |
 
 Examples:
 
@@ -1226,13 +1227,13 @@ Water level = 10 cm
 ```
 
 ```text
-Water level = 28 cm
+Water level = 65 cm
 -> WARNING
 -> YELLOW
 ```
 
 ```text
-Water level = 47 cm
+Water level = 72 cm
 -> DANGER
 -> RED + BUZZER
 ```
@@ -1256,8 +1257,9 @@ Example with a 100 cm installation height:
 | Distance from sensor to water | Calculated water level | Level |
 |---:|---:|---|
 | 90 cm | 10 cm | SAFE |
-| 75 cm | 25 cm | WARNING |
-| 50 cm | 50 cm | DANGER |
+| 40 cm | 60 cm | WARNING |
+| 30 cm | 70 cm | DANGER |
+| 23 cm | 77 cm | DANGER |
 
 Remember:
 
@@ -1269,29 +1271,19 @@ higher water
 more dangerous
 ```
 
-## 27.2 Adjust water thresholds to the real model
+## 27.2 Calibration theo mô hình thật
 
-If your physical tank/model is not 100 cm high, change:
+Nếu chiều cao lắp đặt hoặc vùng mù cảm biến thay đổi, cần đo lại cả:
 
 ```cpp
 SENSOR_HEIGHT_CM
+MIN_VALID_DISTANCE_CM
+WATER_WARNING_DISTANCE_CM
+WATER_DANGER_DISTANCE_CM
 ```
 
-Example, if the real model is only 25 cm high:
-
-```cpp
-SENSOR_HEIGHT_CM = 25.0;
-WATER_WARNING = 7.0;
-WATER_DANGER  = 15.0;
-```
-
-Then:
-
-```text
-< 7 cm       -> SAFE
-7 to <15 cm  -> WARNING
->= 15 cm     -> DANGER
-```
+Luôn bảo đảm `WATER_DANGER_DISTANCE_CM` không nhỏ hơn `MIN_VALID_DISTANCE_CM`
+và nhỏ hơn `WATER_WARNING_DISTANCE_CM`.
 
 ---
 
@@ -1474,7 +1466,7 @@ This is the main table to review before viva.
 | Temperature | `< 35°C` | `35 to < 40°C` | `>= 40°C` |
 | Humidity | Monitoring only | — | — |
 | MQ-2 | `< 1300 ADC` | `1300 to < 1600` | `>= 1600` |
-| Water level | `< 20 cm` | `20 to < 40 cm` | `>= 40 cm` |
+| Water distance | `> 40 cm` | `> 30 to 40 cm` | `23 to 30 cm` |
 | Tilt | `< 10°` | `10 to < 20°` | `>= 20°` |
 | Vibration | `< 1.20 m/s²` | `1.20 to < 2.50` | `>= 2.50` |
 | Impact | `< 10 m/s²` | — | `>= 10` |

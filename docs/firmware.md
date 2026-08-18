@@ -196,7 +196,8 @@ distance           = 65 cm
 waterLevel         = 35 cm
 ```
 
-Khoảng cách được làm mượt bằng EMA trước khi tính trạng thái.
+Nếu không nhận được echo, firmware giữ trạng thái nước hợp lệ trước đó. Khoảng cách
+nhỏ hơn `23 cm` được clamp về `23 cm`, tương ứng mức nước tối đa đo được là `77 cm`.
 
 ### Trạng thái LED
 
@@ -204,23 +205,23 @@ Khoảng cách được làm mượt bằng EMA trước khi tính trạng thái
 |---|---|
 | SAFE | Xanh |
 | WARNING | Vàng |
-| DANGER | Đỏ sáng liên tục |
-| CRITICAL | Đỏ nhấp nháy |
+| DANGER | Đỏ + buzzer |
 
 ### Ngưỡng mặc định
 
-| State | Enter | Exit |
+| State | Khoảng cách cảm biến | Mức nước tương ứng |
 |---|---:|---:|
-| WARNING | 20 cm | 15 cm |
-| DANGER | 40 cm | 35 cm |
-| CRITICAL | 60 cm | 55 cm |
+| SAFE | `> 40 cm` | `< 60 cm` |
+| WARNING | `> 30 đến 40 cm` | `60 đến < 70 cm` |
+| DANGER | `23 đến 30 cm` | `70 đến 77 cm` |
 
-`60/55 cm` là ví dụ hysteresis đã có trong mô tả. Các mức còn lại là giá trị khởi đầu để demo và phải chỉnh theo mô hình thật.
+Ngưỡng nguy hiểm `70 cm` nằm trong khoảng đo trực tiếp tối đa `77 cm` của cấu hình hiện tại.
 
 Đặc biệt phải sửa:
 
 ```cpp
-float INSTALLATION_HEIGHT_CM = 100.0f;
+const float SENSOR_HEIGHT_CM = 100.0;
+const float MIN_VALID_DISTANCE_CM = 23.0;
 ```
 
 thành chiều cao thật từ cảm biến xuống mốc `0 cm` của mô hình.
@@ -658,12 +659,12 @@ Cần chốt bằng dữ liệu thật:
 
 ```text
 MAIN
-- INSTALLATION_HEIGHT_CM
+- SENSOR_HEIGHT_CM
+- MIN_VALID_DISTANCE_CM
 - GAS_WARNING_ENTER / EXIT
 - GAS_DANGER_ENTER / EXIT
-- WATER_WARNING_ENTER / EXIT
-- WATER_DANGER_ENTER / EXIT
-- WATER_CRITICAL_ENTER / EXIT
+- WATER_WARNING_DISTANCE_CM
+- WATER_DANGER_DISTANCE_CM
 
 F7
 - TILT_WARNING_ENTER / EXIT
