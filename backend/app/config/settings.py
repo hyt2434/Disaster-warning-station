@@ -27,8 +27,8 @@ class Settings(BaseSettings):
     mqtt_client_id: str = "disaster-warning-backend"
 
     mongodb_uri: str = ""
-    mongodb_database: str = "DisasterDB"
-    mongodb_collection: str = "sensor_data"
+    mongodb_database: str = "disaster_db"
+    mongodb_collection: str = "sensor_readings"
 
     @property
     def allowed_origins(self) -> list[str]:

@@ -49,11 +49,13 @@ PostgreSQL local có thể được cài trực tiếp hoặc chạy bằng Dock
 ```dotenv
 DATABASE_URL=postgresql://<user>:<password>@localhost:5432/<database>
 MONGODB_URI=mongodb+srv://<user>:<password>@<cluster>/?appName=<app>
-MONGODB_DATABASE=DisasterDB
-MONGODB_COLLECTION=sensor_data
+MONGODB_DATABASE=disaster_db
+MONGODB_COLLECTION=sensor_readings
 ```
 
 MongoDB Atlas là Cloud storage bắt buộc của demo. Nếu Atlas tạm mất kết nối, backend giữ tối đa 10.000 telemetry trong RAM và tự đẩy bù khi kết nối lại; PostgreSQL local vẫn giữ dữ liệu cho dashboard.
+
+Nếu `sensor_readings` chưa tồn tại, `python ai/retrain.py` sẽ tự tạo collection này. Model chỉ được huấn luyện sau khi collection có ít nhất 100 bản ghi hợp lệ.
 
 Chạy backend:
 

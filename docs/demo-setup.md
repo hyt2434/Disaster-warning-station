@@ -317,8 +317,8 @@ MongoDB Atlas là Cloud storage bắt buộc của demo. Thêm vào `.env`:
 
 ```dotenv
 MONGODB_URI=mongodb+srv://<user>:<password>@<cluster>/?appName=<app>
-MONGODB_DATABASE=DisasterDB
-MONGODB_COLLECTION=sensor_data
+MONGODB_DATABASE=disaster_db
+MONGODB_COLLECTION=sensor_readings
 ```
 
 Không ghi MongoDB URI trực tiếp vào file Python. Nếu Atlas tạm mất kết nối, backend lưu PostgreSQL, xếp telemetry vào hàng đợi RAM và tự đồng bộ lại lên MongoDB khi Cloud hoạt động.
