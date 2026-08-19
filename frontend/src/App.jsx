@@ -14,11 +14,12 @@ import {
   getHealth,
   getLatestF7Telemetry,
   getReadings,
-  getThingSpeakPrediction,
   getThingSpeakHistory,
+  getThingSpeakPrediction,
 } from './services/api';
 
-const AUTO_REFRESH_INTERVAL_MS = 2000;
+const LIVE_REFRESH_INTERVAL_MS = 2000;
+const CLOUD_REFRESH_INTERVAL_MS = 15000;
 
 function getErrorMessage(error, fallbackMessage) {
   if (error instanceof TypeError) {
@@ -33,77 +34,69 @@ export default function App() {
   const [readings, setReadings] = useState([]);
   const [latestF7, setLatestF7] = useState(null);
   const [cloudPrediction, setCloudPrediction] = useState(null);
-  const [predictionError, setPredictionError] = useState('');
   const [cloudHistory, setCloudHistory] = useState(null);
+  const [predictionError, setPredictionError] = useState('');
   const [historyError, setHistoryError] = useState('');
   const [loading, setLoading] = useState(true);
   const [sendingCommand, setSendingCommand] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
-  const loadDashboard = useCallback(async (showLoading = true) => {
-    if (showLoading) {
-      setLoading(true);
-    }
-
-    setError('');
-
+  const loadLiveData = useCallback(async (initialLoad = false) => {
     try {
       const nextHealth = await getHealth();
       setHealth(nextHealth);
       setLatestF7(await getLatestF7Telemetry());
 
-      try {
-        setCloudPrediction(await getThingSpeakPrediction());
-        setPredictionError('');
-      } catch (predictionRequestError) {
-        setCloudPrediction(null);
-        setPredictionError(
-          getErrorMessage(
-            predictionRequestError,
-            'Không thể dự đoán dữ liệu từ ThingSpeak.',
-          ),
-        );
-      }
-
-      try {
-        setCloudHistory(await getThingSpeakHistory());
-        setHistoryError('');
-      } catch (historyRequestError) {
-        setCloudHistory(null);
-        setHistoryError(
-          getErrorMessage(
-            historyRequestError,
-            'Không thể tải lịch sử từ ThingSpeak.',
-          ),
-        );
-      }
-
       if (nextHealth.database === 'connected') {
         setReadings(await getReadings());
+        setError('');
       } else {
         setReadings([]);
-        setError('Backend đang chạy nhưng chưa kết nối được PostgreSQL.');
+        setError('Backend chưa kết nối được PostgreSQL.');
       }
     } catch (requestError) {
       setHealth(null);
+      setLatestF7(null);
+      setReadings([]);
       setError(getErrorMessage(requestError, 'Không thể kết nối backend.'));
     } finally {
-      if (showLoading) {
+      if (initialLoad) {
         setLoading(false);
       }
     }
   }, []);
 
+  const loadCloudData = useCallback(async () => {
+    try {
+      setCloudHistory(await getThingSpeakHistory());
+      setHistoryError('');
+    } catch (requestError) {
+      setCloudHistory(null);
+      setHistoryError(getErrorMessage(requestError, 'Không thể tải lịch sử ThingSpeak.'));
+    }
+
+    try {
+      setCloudPrediction(await getThingSpeakPrediction());
+      setPredictionError('');
+    } catch (requestError) {
+      setCloudPrediction(null);
+      setPredictionError(getErrorMessage(requestError, 'Không thể tải dự đoán ThingSpeak.'));
+    }
+  }, []);
+
   useEffect(() => {
-    loadDashboard();
+    loadLiveData(true);
+    loadCloudData();
 
-    const refreshTimer = window.setInterval(() => {
-      loadDashboard(false);
-    }, AUTO_REFRESH_INTERVAL_MS);
+    const liveTimer = window.setInterval(loadLiveData, LIVE_REFRESH_INTERVAL_MS);
+    const cloudTimer = window.setInterval(loadCloudData, CLOUD_REFRESH_INTERVAL_MS);
 
-    return () => window.clearInterval(refreshTimer);
-  }, [loadDashboard]);
+    return () => {
+      window.clearInterval(liveTimer);
+      window.clearInterval(cloudTimer);
+    };
+  }, [loadCloudData, loadLiveData]);
 
   async function sendBuzzerCommand(state) {
     setSendingCommand(true);
@@ -112,8 +105,7 @@ export default function App() {
 
     try {
       const result = await controlBuzzer(state);
-      setMessage(`${result.message} Đang chờ ESP32 phản hồi trạng thái thực tế.`);
-      await loadDashboard(false);
+      setMessage(`${result.message} Trạng thái sẽ cập nhật ở lần polling tiếp theo.`);
     } catch (requestError) {
       setError(getErrorMessage(requestError, 'Không thể gửi lệnh điều khiển còi.'));
     } finally {
@@ -122,66 +114,42 @@ export default function App() {
   }
 
   const latest = readings[0];
-  const backendOnline = health?.backend === 'online';
 
   return (
     <div className="app-shell">
       <TopNavigation />
 
       <main className="dashboard">
-        <Header health={health} onRefresh={loadDashboard} refreshing={loading} />
+        <Header />
 
         {error && <div className="notice error-notice">{error}</div>}
         {message && <div className="notice success-notice">{message}</div>}
 
-        <AlarmMonitor latestReading={latest} backendOnline={backendOnline} />
-
+        <AlarmMonitor health={health} latestReading={latest} />
         <MonitoringFunctions latest={latest} />
-
         <DeviceControlPanel
           health={health}
-          latestReading={latest}
           sending={sendingCommand}
           onCommand={sendBuzzerCommand}
         />
 
-        <PredictionPanel
-          cloudPrediction={cloudPrediction}
-          predictionError={predictionError}
-        />
-
-        <section className="section-block cloud-data-section" id="history" aria-labelledby="history-title">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">Historical data</p>
-              <h2 id="history-title">Lịch sử PostgreSQL và dữ liệu ThingSpeak</h2>
-            </div>
-            <div className="heading-badges">
-              <span className="row-count">{readings.length} bản ghi</span>
-              <span className="function-badge">[F4]</span>
-            </div>
+        <section className="section-block" id="history" aria-labelledby="history-title">
+          <div className="section-heading section-heading-with-badge">
+            <span className="function-badge">[F4]</span>
+            <h2 id="history-title">Lịch sử dữ liệu</h2>
           </div>
-          <p className="function-note history-note">
-            Monitor đọc dữ liệu PostgreSQL mỗi 2 giây. Biểu đồ dưới đây được tải trực tiếp từ ThingSpeak Cloud.
-          </p>
-          <h3 className="history-subtitle">Biểu đồ lịch sử ThingSpeak</h3>
-          <ThingSpeakHistoryChart
-            cloudHistory={cloudHistory}
-            historyError={historyError}
-          />
-          <h3 className="history-subtitle">Nhật ký dữ liệu PostgreSQL</h3>
+          <h3 className="history-subtitle">ThingSpeak</h3>
+          <ThingSpeakHistoryChart cloudHistory={cloudHistory} historyError={historyError} />
+          <h3 className="history-subtitle">PostgreSQL</h3>
           {loading ? <div className="empty-state">Đang tải dữ liệu…</div> : <ReadingsTable readings={readings} />}
         </section>
 
+        <PredictionPanel cloudPrediction={cloudPrediction} predictionError={predictionError} />
         <F7Panel latestF7={latestF7} connectionStatus={health?.f7_device} />
-
         <SystemStatusPanel health={health} />
-
       </main>
 
-      <footer className="page-footer">
-        Disaster Warning Station · Frontend demo kết nối FastAPI
-      </footer>
+      <footer className="page-footer">Disaster Warning Station</footer>
     </div>
   );
 }

@@ -1,11 +1,11 @@
 const menuItems = [
   { label: 'Tổng quan', target: '#overview' },
-  { label: 'Giám sát · F1/F3/F6', target: '#monitoring' },
-  { label: 'Điều khiển · F2', target: '#device-control' },
-  { label: 'Lịch sử · F4', target: '#history' },
-  { label: 'Dự đoán · F5', target: '#prediction' },
-  { label: 'Rung/nghiêng · F7', target: '#f7-monitoring' },
-  { label: 'Hệ thống · F8', target: '#system-status' },
+  { label: 'Cảm biến', target: '#monitoring' },
+  { label: 'Còi', target: '#device-control' },
+  { label: 'Lịch sử', target: '#history' },
+  { label: 'Dự đoán', target: '#prediction' },
+  { label: 'F7', target: '#f7-monitoring' },
+  { label: 'Kết nối', target: '#system-status' },
 ];
 
 export function TopNavigation() {
@@ -15,7 +15,6 @@ export function TopNavigation() {
         <span className="brand-icon">!</span>
         <span>
           <strong>Disaster Warning Station</strong>
-          <small>IoT · AI · Cloud</small>
         </span>
       </a>
 
@@ -26,8 +25,6 @@ export function TopNavigation() {
           </a>
         ))}
       </nav>
-
-      <span className="demo-label">DEMO MODE</span>
     </header>
   );
 }
