@@ -35,10 +35,9 @@ Disaster-warning-station/
 ├── frontend/         React + Vite dashboard
 ├── firmware/         Firmware hai ESP32 và công cụ kiểm tra kết nối
 ├── ai/               Script huấn luyện, đánh giá và retrain mô hình
-├── infrastructure/   PostgreSQL schema và Mosquitto local
+├── infrastructure/   PostgreSQL schema dùng khi tạo database mới
 ├── docs/             Tài liệu kỹ thuật còn sử dụng
 ├── tests/            Integration test
-├── docker-compose.yml
 └── README.md
 ```
 
@@ -46,7 +45,7 @@ Các file model `*.pkl` là artifact được sinh khi train/retrain nên không
 
 ## Chạy PostgreSQL và backend
 
-PostgreSQL local có thể được cài trực tiếp hoặc chạy bằng Docker. Cấu hình kết nối nằm trong `.env`:
+PostgreSQL và Mosquitto được cài và chạy trực tiếp trên máy. Cấu hình kết nối nằm trong `.env`:
 
 ```dotenv
 DATABASE_URL=postgresql://<user>:<password>@localhost:5432/<database>
@@ -85,16 +84,6 @@ npm run dev
 ```
 
 Mở `http://localhost:5173`.
-
-## Chạy hạ tầng local bằng Docker
-
-Nếu máy có Docker:
-
-```powershell
-docker compose up -d database mqtt-broker
-```
-
-`docker-compose.yml` chỉ phục vụ môi trường local, không phải cấu hình production.
 
 ## Kiểm tra
 
