@@ -321,11 +321,11 @@ MPU6050
   +--> đọc nhóm 20 mẫu mỗi 2 giây
   +--> tính roll, pitch, tilt, vibration, impact
   +--> lấy mức cao nhất: SAFE / WARNING / DANGER
-  +--> MQTT -> Main, backend và web
-  +--> UDP local -> Main khi Main kết nối Wi-Fi của F7
+  +--> MQTT disaster/f7/state -> Main
+  +--> MQTT disaster/f7/telemetry -> Backend
 ```
 
-F7 luôn tạo access point `DISASTER_F7_DIRECT`. Bình thường F7 vẫn dùng Home Wi-Fi và MQTT. Nếu Main mất Home Wi-Fi, Main kết nối vào access point của F7 để tiếp tục nhận cảnh báo chuyển động cục bộ.
+Main và F7 cùng kết nối Home Wi-Fi và Mosquitto. F7 gửi mức chuyển động cho Main qua MQTT; dữ liệu chi tiết được gửi trực tiếp cho backend.
 
 ## 13. Pin MPU6050
 
@@ -561,9 +561,8 @@ mosquitto_sub -h <BROKER_IP> -t 'disaster/f7/#' -v
 13. Tạo rung có kiểm soát -> kiểm tra `vibration`.
 14. Tạo va chạm nhẹ, an toàn -> kiểm tra `impact`.
 15. Xác nhận telemetry F7 và frontend thay đổi mỗi 2 giây.
-16. Đặt `LOCAL_TEST_MODE = true` trong cả hai firmware, nạp F7 trước rồi Main.
-17. Kiểm tra F7 báo Main đã kết nối và Main nhận `[UDP] Motion` mỗi 2 giây.
-18. Đặt `LOCAL_TEST_MODE = false` và nạp lại sau khi test.
+16. Subscribe `disaster/f7/#` và xác nhận status, state, telemetry.
+17. Nghiêng/rung F7 và xác nhận Main nhận `[MQTT] Motion`.
 
 ---
 
@@ -629,8 +628,8 @@ Tilt + Vibration + Impact
         v
 SAFE / WARNING / DANGER
         |
-        +------> MQTT telemetry every 2 seconds
-        +------> UDP local every 2 seconds when Main joins F7 AP
+        +------> MQTT state to Main every 2 seconds
+        +------> MQTT telemetry to Backend every 2 seconds
 ```
 
 ---
@@ -649,7 +648,6 @@ Hai file firmware hiện có các phần chính:
 - buzzer command + state ACK;
 - MPU6050 calibration;
 - tilt/vibration/impact;
-- F7 access point và UDP fallback local;
 - chu kỳ telemetry 2 giây.
 
 Phần còn lại quan trọng nhất trước demo không phải thêm nhiều code, mà là **calibration threshold bằng dữ liệu thật và test end-to-end**.

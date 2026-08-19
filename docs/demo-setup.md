@@ -179,7 +179,7 @@ const char* MQTT_HOST = "IP_MAY_TINH_CHAY_MOSQUITTO";
 
 Chọn đúng board và cổng, sau đó `Verify` và `Upload`. Serial Monitor dùng `115200 baud`.
 
-## 9. Cấu hình F7 và kiểm tra đường truyền dự phòng
+## 9. Cấu hình và kiểm tra F7
 
 Mở `firmware/f7_station/f7_station.ino` và điền cùng Wi-Fi, MQTT broker với Main:
 
@@ -191,22 +191,29 @@ const char* MQTT_HOST = "IP_MAY_TINH_CHAY_MOSQUITTO";
 
 F7 đọc MPU6050 và publish MQTT mỗi 2 giây. Frontend gọi API mỗi 2 giây nên dữ liệu F7 tự cập nhật khi luồng `F7 -> MQTT -> Backend -> Web` hoạt động.
 
-F7 luôn tạo mạng dự phòng `DISASTER_F7_DIRECT`. Khi Main không vào được Wi-Fi nhà trong 8 giây, Main kết nối mạng này và nhận gói UDP từ F7. Gói local gồm:
+Kiểm tra đường truyền MQTT:
 
-```text
-STATUS,ROLL,PITCH,TILT,VIBRATION,IMPACT
+1. Đảm bảo Main, F7 và laptop dùng cùng Wi-Fi.
+2. Điền `MQTT_HOST` là IPv4 hiện tại của laptop trong cả hai firmware.
+3. Bật Mosquitto.
+4. Subscribe toàn bộ topic:
+
+```powershell
+mosquitto_sub -h <IP_LAPTOP> -p 1883 -t "disaster/#" -v
 ```
 
-Để test mà không cần tắt router:
+5. Bật F7 và kiểm tra:
 
-1. Đổi `LOCAL_TEST_MODE = true` trong cả `f7_station.ino` và `main_station.ino`.
-2. Nạp F7 trước, sau đó nạp Main.
-3. Mở hai Serial Monitor ở `115200 baud`.
-4. F7 phải in `Main connected to F7 WiFi: YES`.
-5. Main phải in `Connected to F7` và các dòng `[UDP] Motion` mỗi 2 giây.
-6. Test xong, đổi hai cờ về `false` và nạp lại để chạy bình thường.
+```text
+disaster/f7/status online
+disaster/f7/state SAFE
+disaster/f7/telemetry {...}
+```
 
-Lưu ý: đường UDP này giữ cảnh báo local giữa hai ESP khi mất mạng nhà. Nếu máy chạy backend cũng mất kết nối với hai ESP thì website không thể nhận dữ liệu mới cho tới khi đường MQTT hoạt động lại.
+6. Bật Main, sau đó nghiêng hoặc rung F7.
+7. Main phải in `[MQTT] Motion -> WARNING` hoặc `[MQTT] Motion -> DANGER`.
+
+Khi mất Wi-Fi, Main vẫn đọc cảm biến local và điều khiển LED/buzzer. F7 vẫn đọc MPU6050 nhưng tạm thời không gửi được dữ liệu cho Main hoặc backend.
 
 ## 10. Chạy chương trình
 

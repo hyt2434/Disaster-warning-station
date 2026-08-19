@@ -3,20 +3,8 @@
  * XIAO ESP32-C3 F7 + MPU6050
  * ============================================================
  *
- * NORMAL PATH:
+ * NETWORK:
  *   F7 -> Home WiFi -> MQTT -> Main / Backend / Web
- *
- * LOCAL FALLBACK PATH:
- *   F7 creates WiFi AP -> Main connects to F7 AP -> UDP -> Main
- *
- * The F7 access point is always available. This makes the fallback
- * easy to test and does not interrupt the normal MQTT connection.
- *
- * TEST WITHOUT TURNING OFF THE ROUTER:
- *   1. Set LOCAL_TEST_MODE = true in this file and Main firmware.
- *   2. Upload this F7 firmware first.
- *   3. Upload Main firmware.
- *   4. Open both Serial Monitors at 115200 baud.
  *
  * MPU6050 DATA:
  *   - Tilt: change of roll or pitch compared with startup position.
@@ -28,7 +16,6 @@
  */
 
 #include <WiFi.h>
-#include <WiFiUdp.h>
 #include <PubSubClient.h>
 #include <Wire.h>
 #include <Adafruit_MPU6050.h>
@@ -55,25 +42,7 @@ const char* TOPIC_TELEMETRY = "disaster/f7/telemetry";
 const char* TOPIC_STATUS = "disaster/f7/status";
 
 // ============================================================
-// 2. LOCAL FALLBACK WIFI CREATED BY F7
-// ============================================================
-
-const char* F7_AP_SSID = "DISASTER_F7_DIRECT";
-const char* F7_AP_PASSWORD = "12345678";
-
-IPAddress F7_AP_IP(192, 168, 7, 1);
-IPAddress F7_AP_GATEWAY(192, 168, 7, 1);
-IPAddress F7_AP_SUBNET(255, 255, 255, 0);
-IPAddress F7_AP_BROADCAST_IP(192, 168, 7, 255);
-
-const int DIRECT_UDP_PORT = 4210;
-
-// false: normal operation using Home WiFi and MQTT.
-// true : skip Home WiFi and only test F7 AP -> UDP -> Main.
-const bool LOCAL_TEST_MODE = false;
-
-// ============================================================
-// 3. MPU6050 PINS AND THRESHOLDS
+// 2. MPU6050 PINS AND THRESHOLDS
 // ============================================================
 
 const int MPU_SDA_PIN = 6;
@@ -102,7 +71,7 @@ const float MINIMUM_VALID_ACCELERATION = 2.0;
 const float MAXIMUM_VALID_ACCELERATION = 40.0;
 
 // ============================================================
-// 4. TIMING
+// 3. TIMING
 // ============================================================
 
 const unsigned long PUBLISH_INTERVAL_MS = 2000;
@@ -110,13 +79,12 @@ const unsigned long MQTT_RETRY_INTERVAL_MS = 5000;
 const unsigned long NETWORK_LOG_INTERVAL_MS = 5000;
 
 // ============================================================
-// 5. OBJECTS AND CURRENT VALUES
+// 4. OBJECTS AND CURRENT VALUES
 // ============================================================
 
 Adafruit_MPU6050 mpu;
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
-WiFiUDP udp;
 
 float baselineRoll = 0.0;
 float baselinePitch = 0.0;
@@ -140,10 +108,9 @@ unsigned long lastMQTTRetry = 0;
 unsigned long lastNetworkLog = 0;
 
 bool homeWiFiWasConnected = false;
-bool mainWasConnectedToF7 = false;
 
 // ============================================================
-// 6. SIMPLE HELPERS
+// 5. SIMPLE HELPERS
 // ============================================================
 
 const char* levelToText(int level)
@@ -211,7 +178,7 @@ float calculateAngleDifference(float currentAngle, float baselineAngle)
 }
 
 // ============================================================
-// 7. CALIBRATE MPU6050
+// 6. CALIBRATE MPU6050
 // ============================================================
 
 void calibrateMPU()
@@ -276,7 +243,7 @@ void calibrateMPU()
 }
 
 // ============================================================
-// 8. READ AND CLASSIFY MOTION
+// 7. READ AND CLASSIFY MOTION
 // ============================================================
 
 void readMotionSensor()
@@ -443,84 +410,59 @@ void updateMotionLevel()
 }
 
 // ============================================================
-// 9. START WIFI
+// 8. START WIFI
 // ============================================================
 
 void startWiFi()
 {
-  WiFi.mode(WIFI_AP_STA);
+  WiFi.mode(WIFI_STA);
   WiFi.persistent(false);
   WiFi.setSleep(false);
   WiFi.setAutoReconnect(true);
 
-  WiFi.softAPConfig(F7_AP_IP, F7_AP_GATEWAY, F7_AP_SUBNET);
-
-  bool accessPointStarted = WiFi.softAP(F7_AP_SSID, F7_AP_PASSWORD);
-
-  if (accessPointStarted)
-  {
-    Serial.println("[DIRECT] F7 fallback WiFi started");
-    Serial.print("[DIRECT] SSID: ");
-    Serial.println(F7_AP_SSID);
-    Serial.print("[DIRECT] IP: ");
-    Serial.println(WiFi.softAPIP());
-  }
-  else
-  {
-    Serial.println("[DIRECT] Failed to start F7 fallback WiFi");
-  }
-
-  if (LOCAL_TEST_MODE)
-  {
-    Serial.println("[TEST] LOCAL_TEST_MODE is ON. Home WiFi and MQTT are skipped.");
-    return;
-  }
-
   Serial.print("[WiFi] Connecting to HOME: ");
   Serial.println(HOME_WIFI_SSID);
+
   WiFi.begin(HOME_WIFI_SSID, HOME_WIFI_PASSWORD);
 }
 
 void maintainWiFi()
 {
   bool homeConnected = WiFi.status() == WL_CONNECTED;
-  bool mainConnected = WiFi.softAPgetStationNum() > 0;
 
   if (homeConnected && !homeWiFiWasConnected)
   {
     homeWiFiWasConnected = true;
+
     Serial.print("[WiFi] HOME connected. IP: ");
     Serial.println(WiFi.localIP());
+
+    return;
   }
 
   if (!homeConnected && homeWiFiWasConnected)
   {
     homeWiFiWasConnected = false;
     mqttClient.disconnect();
-    Serial.println("[WiFi] HOME lost. F7 fallback WiFi is still available.");
+
+    Serial.println("[WiFi] HOME lost");
   }
 
-  if (mainConnected != mainWasConnectedToF7)
-  {
-    mainWasConnectedToF7 = mainConnected;
-    Serial.print("[DIRECT] Main connected to F7 WiFi: ");
-    Serial.println(mainConnected ? "YES" : "NO");
-  }
-
-  if (!homeConnected && millis() - lastNetworkLog >= NETWORK_LOG_INTERVAL_MS)
+  if (!homeConnected &&
+      millis() - lastNetworkLog >= NETWORK_LOG_INTERVAL_MS)
   {
     lastNetworkLog = millis();
-    Serial.println("[WiFi] HOME unavailable. Waiting for Main on F7 fallback WiFi.");
+    Serial.println("[WiFi] Waiting for Home WiFi...");
   }
 }
 
 // ============================================================
-// 10. MQTT NORMAL PATH
+// 9. MQTT
 // ============================================================
 
 void maintainMQTT()
 {
-  if (LOCAL_TEST_MODE || WiFi.status() != WL_CONNECTED)
+  if (WiFi.status() != WL_CONNECTED)
   {
     return;
   }
@@ -635,47 +577,7 @@ void publishMQTTData()
 }
 
 // ============================================================
-// 11. UDP LOCAL FALLBACK PATH
-// ============================================================
-
-void sendDirectDataToMain()
-{
-  if (WiFi.softAPgetStationNum() == 0)
-  {
-    return;
-  }
-
-  /*
-   * Packet format:
-   * STATUS,ROLL,PITCH,TILT,VIBRATION,IMPACT
-   *
-   * Example:
-   * WARNING,1.2,2.5,12.4,1.35,2.10
-   */
-  String packet = "";
-
-  packet += levelToText(motionLevel);
-  packet += ",";
-  packet += String(roll, 1);
-  packet += ",";
-  packet += String(pitch, 1);
-  packet += ",";
-  packet += String(tiltAngle, 1);
-  packet += ",";
-  packet += String(vibrationValue, 2);
-  packet += ",";
-  packet += String(impactDelta, 2);
-
-  udp.beginPacket(F7_AP_BROADCAST_IP, DIRECT_UDP_PORT);
-  udp.print(packet);
-  udp.endPacket();
-
-  Serial.print("[DIRECT] Sent to Main: ");
-  Serial.println(packet);
-}
-
-// ============================================================
-// 12. SERIAL MONITOR
+// 10. SERIAL MONITOR
 // ============================================================
 
 void printMotionData()
@@ -715,14 +617,11 @@ void printMotionData()
   Serial.print("HOME MQTT   : ");
   Serial.println(mqttClient.connected() ? "CONNECTED" : "DISCONNECTED");
 
-  Serial.print("MAIN DIRECT : ");
-  Serial.println(WiFi.softAPgetStationNum() > 0 ? "CONNECTED" : "NOT CONNECTED");
-
   Serial.println("================================");
 }
 
 // ============================================================
-// 13. SETUP AND LOOP
+// 11. SETUP AND LOOP
 // ============================================================
 
 void setup()
@@ -784,11 +683,7 @@ void loop()
 
     if (motionSensorValid)
     {
-      // Normal path for Main, backend and web.
       publishMQTTData();
-
-      // Local safety path when Main is connected to the F7 access point.
-      sendDirectDataToMain();
     }
 
     printMotionData();

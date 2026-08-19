@@ -8,7 +8,7 @@ Tài liệu này là contract duy nhất giữa hai firmware và backend. Không
 - Telemetry/state F7 dùng `SAFE`, `WARNING`, `DANGER`.
 - Telemetry định kỳ không retain; status và buzzer state được retain.
 - ESP32 Main là nơi quyết định system, LED và buzzer. Backend/AI chỉ lưu, dự đoán, thông báo và hiển thị.
-- UDP fallback chỉ giữ cảnh báo local F7 → Main; backend không nhận biết trạng thái “direct”.
+- Main và F7 cùng kết nối Home Wi-Fi và Mosquitto; không có đường truyền trực tiếp riêng giữa hai ESP.
 
 ## Topic, QoS và retain
 
@@ -55,7 +55,7 @@ Topic `disaster/main/telemetry`:
 | `buzzer` | trạng thái phần cứng thật |
 | `buzzerMuted` | người dùng đã tắt tiếng alarm event hiện tại |
 
-Main không publish roll/pitch/tilt/vibration/impact. Backend nhận chi tiết trực tiếp từ topic F7; dữ liệu UDP là local-only. Backend từ chối payload Main thiếu field bắt buộc thay vì tạo số 0 giả.
+Main không publish roll/pitch/tilt/vibration/impact. Backend nhận chi tiết trực tiếp từ topic F7. Backend từ chối payload Main thiếu field bắt buộc thay vì tạo số 0 giả.
 
 Ba trạng thái này độc lập và hoàn toàn hợp lệ:
 
@@ -92,6 +92,8 @@ Topic `disaster/f7/telemetry`:
 
 F7 đồng thời publish `SAFE`, `WARNING` hoặc `DANGER` lên `disaster/f7/state` để Main tổng hợp local safety.
 
+Main và F7 cùng kết nối Home Wi-Fi và Mosquitto. F7 gửi trạng thái chuyển động cho Main qua `disaster/f7/state`; không có đường truyền trực tiếp riêng giữa hai ESP.
+
 Backend cache telemetry chi tiết tối đa 10 giây. Khi xử lý một Main telemetry:
 
 - F7 còn fresh: ghi các giá trị vào `f7_*`;
@@ -99,16 +101,6 @@ Backend cache telemetry chi tiết tối đa 10 giây. Khi xử lý một Main t
 - `motion` của Main vẫn dùng cho ThingSpeak Field 5 nhưng không được ghi thay cho `f7_status`.
 
 Khi Main offline, F7 không tạo row PostgreSQL riêng. Backend vẫn có thể gửi `vibration` lên ThingSpeak Field 7. Để tránh hai Pushsafer cho cùng một sự kiện, Main system DANGER chịu trách nhiệm notification khi Main còn online; F7 chỉ tự notification khi Main đã mất telemetry mới.
-
-## UDP fallback local
-
-F7 luôn tạo AP `DISASTER_F7_DIRECT`. Khi mất Home Wi-Fi, Main ngắt MQTT, kết nối AP và nhận UDP cổng `4210`:
-
-```text
-STATUS,ROLL,PITCH,TILT,VIBRATION,IMPACT
-```
-
-Fallback duy trì LED/buzzer local. Backend/web/cloud có thể mất live data cho đến khi MQTT hoạt động lại.
 
 ## Mapping lưu trữ
 
