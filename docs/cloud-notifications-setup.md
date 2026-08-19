@@ -84,10 +84,30 @@ Nếu chỉ gửi tới một điện thoại, thay `a` bằng Device ID, ví d�
 
 | Nguồn | Khi nào gửi |
 |---|---|
-| ESP32 Main | `system_status` mới chuyển sang `WARNING` hoặc `DANGER` |
-| ESP32 F7 | `status` mới chuyển sang `WARNING` hoặc `DANGER` |
+| ESP32 Main | `system_status` chuyển sang `DANGER` |
+| ESP32 F7 | `status` chuyển sang `DANGER` |
 
-Backend không gửi lặp lại khi ESP32 liên tục gửi cùng một trạng thái. Khi thiết bị trở về `SAFE`, lần `WARNING` hoặc `DANGER` tiếp theo sẽ gửi một thông báo mới. Cách này giúp tránh làm phiền và tránh tiêu hao lượt API Pushsafer.
+`WARNING` chỉ hiển thị trên website và đèn vàng, không gửi Pushsafer. Backend không gửi lặp lại khi ESP32 liên tục gửi `DANGER`. Sau khi thiết bị trở về `SAFE/NORMAL`, sự kiện `DANGER` tiếp theo mới gửi một thông báo mới.
+
+Nội dung thông báo chỉ liệt kê dữ liệu đạt ngưỡng nguy hiểm:
+
+| Dữ liệu | Ngưỡng DANGER |
+|---|---:|
+| Nhiệt độ | `>= 40 °C` |
+| Khói / gas | `>= 1600 ADC` |
+| Mực nước | `>= 70 cm` |
+| Độ nghiêng F7 | `>= 30 độ` |
+| Độ rung F7 | `>= 2.0 m/s²` |
+| Va đập F7 | `>= 8.0 m/s²` |
+
+Ví dụ nội dung nhận trên điện thoại:
+
+```text
+Phát hiện trạng thái NGUY HIỂM.
+Nguyên nhân:
+- Nhiệt độ: 42.5 °C (ngưỡng nguy hiểm từ 40 °C)
+- Mực nước: 72.0 cm (ngưỡng nguy hiểm từ 70 cm)
+```
 
 ### Kiểm tra Pushsafer độc lập
 
@@ -119,6 +139,6 @@ Kết quả thành công có `status = 1`. Sau đó chạy backend và kiểm tr
 2. Chạy `python backend/app.py` từ thư mục gốc, hoặc `python app.py` khi đang ở `backend`.
 3. Bật ESP32 và kiểm tra MQTT telemetry trong log backend.
 4. Chờ ThingSpeak cập nhật Field 1–7.
-5. Tạo điều kiện `WARNING`/`DANGER` một lần và kiểm tra điện thoại nhận Pushsafer.
+5. Tạo điều kiện `DANGER` một lần và kiểm tra điện thoại nhận Pushsafer cùng nguyên nhân gây nguy hiểm.
 
 API key chỉ thuộc backend. Không đưa key vào frontend, firmware hoặc ảnh chụp màn hình khi nộp bài.

@@ -23,7 +23,7 @@ React local → FastAPI REST API → PostgreSQL
 - MQTT nhận telemetry từ ESP32.
 - ThingSpeak lưu dữ liệu Cloud và cung cấp lịch sử để retrain AI.
 - Frontend lấy lịch sử ThingSpeak về và hiển thị biểu đồ Field 1–7 tại F4.
-- Pushsafer gửi thông báo khi Main hoặc F7 chuyển sang `WARNING`/`DANGER`.
+- Pushsafer gửi nguyên nhân khi Main hoặc F7 chuyển sang `DANGER`.
 
 Đây là đồ án demo local, chưa có cấu hình triển khai production.
 

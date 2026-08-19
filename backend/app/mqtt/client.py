@@ -11,6 +11,7 @@ from ..database import SessionLocal
 from ..database.repository import create_f7_reading, create_reading
 from ..schemas import F7ReadingCreate, SensorReadingCreate
 from ..services import ai_prediction_service, alert_service, thingspeak_client
+from ..services.alerts import build_f7_danger_message, build_main_danger_message
 from .topics import (
     BACKEND_STATUS_TOPIC,
     BUZZER_STATE_TOPIC,
@@ -420,16 +421,10 @@ class MQTTClient:
         self._run_ai_prediction(sensor_record)
 
         system_status = str(sensor_record["system_status"]).upper()
-        alert_message = (
-            f"ESP32 Main báo {system_status}. "
-            f"Nhiệt độ: {sensor_record['temperature']} °C, "
-            f"gas: {sensor_record['gas_filtered']}, "
-            f"mực nước: {sensor_record['water_level_cm']} cm."
-        )
         alert_service.notify_if_needed(
             source="main_station",
             current_status=system_status,
-            message=alert_message,
+            message=build_main_danger_message(sensor_record),
         )
 
     def _handle_f7_telemetry(self, payload: str) -> None:
@@ -464,16 +459,10 @@ class MQTTClient:
             })
 
         f7_status = str(self._latest_f7["status"]).upper()
-        alert_message = (
-            f"ESP32 F7 báo {f7_status}. "
-            f"Độ nghiêng: {self._latest_f7['tilt']}, "
-            f"rung: {self._latest_f7['vibration']}, "
-            f"va chạm: {self._latest_f7['impact']}."
-        )
         alert_service.notify_if_needed(
             source="f7_station",
             current_status=f7_status,
-            message=alert_message,
+            message=build_f7_danger_message(self._latest_f7),
         )
 
     def _on_message(

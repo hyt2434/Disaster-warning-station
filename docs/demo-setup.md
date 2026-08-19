@@ -12,7 +12,7 @@ ESP32 tính SAFE / WARNING / DANGER
 Backend FastAPI
    ├── PostgreSQL: lưu đầy đủ để website đọc
    ├── ThingSpeak: lưu một mẫu mỗi 15 giây
-   ├── Pushsafer: gửi khi trạng thái chuyển sang WARNING/DANGER
+   ├── Pushsafer: gửi nguyên nhân khi trạng thái chuyển sang DANGER
    └── AI: dùng dữ liệu ThingSpeak để dự đoán hệ thống sau 5 phút
         ↓ REST API
 Frontend React
@@ -255,7 +255,7 @@ Khởi động lại backend sau khi retrain để nạp model mới.
 | Backend `/api/health` | PostgreSQL, MQTT và ThingSpeak có trạng thái |
 | PostgreSQL | Bảng `sensor_readings` tăng bản ghi |
 | ThingSpeak | Field 1–7 cập nhật khoảng 15 giây/lần; Field 7 là độ rung F7 |
-| Pushsafer | Có thông báo khi hệ thống mới chuyển sang WARNING/DANGER |
+| Pushsafer | Có thông báo và nguyên nhân khi hệ thống mới chuyển sang DANGER |
 | Website | Hiện nhiệt độ, gas, nước, System, Buzzer và Mute |
 | Nhấn OFF khi DANGER | Còi tắt nhưng System vẫn DANGER |
 | System trở về SAFE | `buzzerMuted=false` |
