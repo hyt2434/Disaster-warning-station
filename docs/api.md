@@ -142,5 +142,7 @@ Kết quả gồm các Field 1–7 của một channel ThingSpeak. Frontend dùn
 
 Backend publish plain text `ON` hoặc `OFF` đến `disaster/main/command/buzzer` với
 `retain=false`. API không chờ hoặc phụ thuộc database trước khi gửi command.
+Backend phải đang kết nối MQTT và Main phải có trạng thái `online`; nếu không,
+API trả `503` thay vì báo gửi lệnh thành công.
 
 Swagger UI: `http://localhost:8000/docs`.

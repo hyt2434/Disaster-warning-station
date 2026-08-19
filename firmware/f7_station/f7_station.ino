@@ -534,8 +534,7 @@ void publishMQTTData()
 
   mqttClient.publish(
     TOPIC_MOTION_STATE,
-    levelToText(motionLevel),
-    true
+    levelToText(motionLevel)
   );
 
   String telemetryJson = "{";

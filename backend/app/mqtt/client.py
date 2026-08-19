@@ -437,6 +437,12 @@ class MQTTClient:
 
         if message.topic == MAIN_STATUS_TOPIC:
             self._main_status = payload.strip().lower()
+
+            if self._main_status != "online":
+                self._system_state = "unknown"
+                self._buzzer_state = "unknown"
+                self._buzzer_muted = None
+
             return
 
         if message.topic == F7_STATUS_TOPIC:

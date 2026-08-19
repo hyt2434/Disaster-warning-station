@@ -1,8 +1,10 @@
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
 from backend.app.mqtt.client import MQTTClient, normalize_main_telemetry
+from backend.app.mqtt.topics import MAIN_STATUS_TOPIC
 
 
 def main_telemetry() -> dict:
@@ -99,3 +101,22 @@ def test_old_status_alias_is_rejected() -> None:
 
     with pytest.raises(ValueError, match="SAFE, WARNING hoặc DANGER"):
         normalize_main_telemetry(telemetry)
+
+
+def test_main_offline_status_clears_stale_runtime_state() -> None:
+    mqtt_client = object.__new__(MQTTClient)
+    mqtt_client._main_status = "online"
+    mqtt_client._system_state = "danger"
+    mqtt_client._buzzer_state = "on"
+    mqtt_client._buzzer_muted = False
+    message = SimpleNamespace(
+        topic=MAIN_STATUS_TOPIC,
+        payload=b"offline",
+    )
+
+    mqtt_client._on_message(None, None, message)
+
+    assert mqtt_client.main_status == "offline"
+    assert mqtt_client.system_state == "unknown"
+    assert mqtt_client.buzzer_state == "unknown"
+    assert mqtt_client.buzzer_muted is None

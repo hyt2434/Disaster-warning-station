@@ -19,7 +19,7 @@ Tài liệu này là contract duy nhất giữa hai firmware và backend. Không
 | `disaster/main/command/buzzer` | Backend → Main | `ON` / `OFF` | 1; Main subscribe QoS 1 | Không |
 | `disaster/main/state/buzzer` | Main → Backend | `ON` / `OFF` | 0 | Có |
 | `disaster/f7/telemetry` | F7 → Backend | JSON | 0 | Không |
-| `disaster/f7/state` | F7 → Main | `SAFE` / `WARNING` / `DANGER` | 0 | Có |
+| `disaster/f7/state` | F7 → Main | `SAFE` / `WARNING` / `DANGER` | 0 | Không |
 | `disaster/f7/status` | F7 → Backend | `online` / Last Will `offline` | publish 0; Last Will 1 | Có |
 | `disaster/backend/status` | Backend → client khác | JSON online/offline | 1 | Có |
 
@@ -91,6 +91,14 @@ Topic `disaster/f7/telemetry`:
 ```
 
 F7 đồng thời publish `SAFE`, `WARNING` hoặc `DANGER` lên `disaster/f7/state` để Main tổng hợp local safety.
+
+F7 publish trạng thái này mỗi 2 giây và không retain, tránh việc Main nhận lại trạng thái chuyển động cũ sau khi reconnect.
+
+Nếu broker từng nhận state retained từ firmware cũ, sau khi nạp firmware F7 mới cần xóa retained message đó một lần:
+
+```powershell
+mosquitto_pub -h <BROKER_IP> -p 1883 -t "disaster/f7/state" -r -n
+```
 
 Main và F7 cùng kết nối Home Wi-Fi và Mosquitto. F7 gửi trạng thái chuyển động cho Main qua `disaster/f7/state`; không có đường truyền trực tiếp riêng giữa hai ESP.
 

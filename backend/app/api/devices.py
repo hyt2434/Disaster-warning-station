@@ -25,6 +25,12 @@ def control_main_buzzer(command: BuzzerCommand) -> BuzzerCommandResponse:
             detail="Backend chưa kết nối MQTT nên không thể gửi lệnh đến ESP32.",
         )
 
+    if mqtt_client.main_status != "online":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="ESP32 Main đang offline nên không thể nhận lệnh buzzer.",
+        )
+
     try:
         mqtt_client.publish(
             topic=BUZZER_COMMAND_TOPIC,
