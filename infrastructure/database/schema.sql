@@ -23,13 +23,15 @@ CREATE TABLE sensor_readings (
     distance_cm DOUBLE PRECISION,
     water_level_cm DOUBLE PRECISION,
     water_level_percent DOUBLE PRECISION,
-    -- Dữ liệu F7 mới nhất được ghép vào mỗi bản ghi Main.
-    angle_x DOUBLE PRECISION,          -- Roll của MPU6050
-    angle_y DOUBLE PRECISION,          -- Pitch của MPU6050
-    vibration DOUBLE PRECISION,        -- Độ rung của MPU6050
+    -- Dữ liệu F7 mới nhất được ghép vào cùng bản ghi Main.
+    f7_roll DOUBLE PRECISION,
+    f7_pitch DOUBLE PRECISION,
+    f7_tilt DOUBLE PRECISION,
+    f7_vibration DOUBLE PRECISION,
+    f7_impact DOUBLE PRECISION,
+    f7_status VARCHAR(30),
 
-    -- Trạng thái do ESP32 Main gửi trong mỗi telemetry.
-    motion_status VARCHAR(30),
+    -- Trạng thái tổng hợp và trạng thái còi của Main.
     status VARCHAR(30) NOT NULL DEFAULT 'NORMAL',
     buzzer BOOLEAN,
     buzzer_muted BOOLEAN,
@@ -40,22 +42,5 @@ CREATE INDEX ix_sensor_readings_device_id ON sensor_readings (device_id);
 CREATE INDEX ix_sensor_readings_recorded_at ON sensor_readings (recorded_at DESC);
 CREATE INDEX ix_sensor_readings_device_recorded
     ON sensor_readings (device_id, recorded_at DESC);
-
-CREATE TABLE f7_readings (
-    id SERIAL PRIMARY KEY,
-    device_id VARCHAR(100) NOT NULL REFERENCES devices(device_id) ON DELETE CASCADE,
-    roll DOUBLE PRECISION,
-    pitch DOUBLE PRECISION,
-    tilt DOUBLE PRECISION,
-    vibration DOUBLE PRECISION,
-    impact DOUBLE PRECISION,
-    status VARCHAR(30) NOT NULL DEFAULT 'NORMAL',
-    recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX ix_f7_readings_device_id ON f7_readings (device_id);
-CREATE INDEX ix_f7_readings_recorded_at ON f7_readings (recorded_at DESC);
-CREATE INDEX ix_f7_readings_device_recorded
-    ON f7_readings (device_id, recorded_at DESC);
 
 COMMIT;

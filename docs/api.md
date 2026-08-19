@@ -45,7 +45,12 @@ Body tối thiểu:
   "gas_raw": 1380,
   "distance_cm": null,
   "water_level_cm": null,
-  "motion_status": "SAFE",
+  "f7_roll": 1.2,
+  "f7_pitch": -2.5,
+  "f7_tilt": 3.1,
+  "f7_vibration": 0.25,
+  "f7_impact": 0.8,
+  "f7_status": "NORMAL",
   "status": "DANGER",
   "buzzer": false,
   "buzzer_muted": true
@@ -119,26 +124,6 @@ Trả tối đa 20 bản ghi gần nhất được đọc trực tiếp từ Thi
 ```
 
 Kết quả gồm các Field 1–7 của một channel ThingSpeak. Frontend dùng Field 7 để vẽ biểu đồ độ rung F7.
-
-## `GET /api/devices/f7/readings?limit=20`
-
-Đọc lịch sử F7 đã lưu trong PostgreSQL, mới nhất trước:
-
-```json
-[
-  {
-    "id": 1,
-    "device_id": "f7-station-01",
-    "roll": 1.2,
-    "pitch": -2.5,
-    "tilt": 3.1,
-    "vibration": 0.25,
-    "impact": 0.8,
-    "status": "NORMAL",
-    "recorded_at": "2026-08-19T10:00:00Z"
-  }
-]
-```
 
 ## `POST /api/devices/main/buzzer`
 

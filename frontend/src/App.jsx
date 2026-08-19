@@ -14,7 +14,7 @@ import {
   controlBuzzer,
   createReading,
   getHealth,
-  getLatestF7Reading,
+  getLatestF7Telemetry,
   getReadings,
   getThingSpeakPrediction,
   getThingSpeakHistory,
@@ -54,7 +54,7 @@ export default function App() {
     try {
       const nextHealth = await getHealth();
       setHealth(nextHealth);
-      setLatestF7(await getLatestF7Reading());
+      setLatestF7(await getLatestF7Telemetry());
 
       try {
         setCloudPrediction(await getThingSpeakPrediction());

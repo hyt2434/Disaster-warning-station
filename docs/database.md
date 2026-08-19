@@ -1,6 +1,6 @@
 # Cơ sở dữ liệu PostgreSQL
 
-## Bảng đang dùng
+## Hai bảng đang dùng
 
 ### `devices`
 
@@ -10,38 +10,24 @@ Lưu mã thiết bị, tên, loại, trạng thái online và lần xuất hiệ
 
 Lưu một ảnh chụp tổng hợp của Main và dữ liệu F7 mới nhất theo thời gian.
 
-Các cột liên quan firmware Main mới:
+Các cột của ESP32 Main:
 
 - `distance_cm`, `water_level_cm`: nullable khi JSN-SR04T không có echo;
-- `angle_x`, `angle_y`: lần lượt là roll và pitch mới nhất của F7;
-- `vibration`: độ rung mới nhất của F7;
-- `motion_status`: trạng thái chuyển động do Main nhận từ F7;
 - `status`: trạng thái nguy cơ tổng hợp SAFE/WARNING/DANGER;
 - `buzzer`: trạng thái vật lý thực tế của còi;
 - `buzzer_muted`: trạng thái tắt tiếng của alarm event hiện tại.
 
-Main và F7 cùng gửi mỗi 2 giây. Backend chỉ ghép dữ liệu F7 vào bản ghi Main khi gói F7 mới nhất không quá 10 giây, tránh lưu lại một giá trị cũ sau khi F7 đã mất kết nối.
+Các cột của ESP32 F7:
 
-Ba cột `motion_status`, `buzzer`, `buzzer_muted` đã có sẵn trong model và
-`infrastructure/database/schema.sql`. Bản demo mới tạo database từ đầu nên backend không chạy
-`ALTER TABLE` khi khởi động.
+- `f7_roll`, `f7_pitch`: góc hiện tại của MPU6050;
+- `f7_tilt`: độ nghiêng so với vị trí lúc calibration;
+- `f7_vibration`: độ dao động trung bình trong nhóm mẫu;
+- `f7_impact`: mức thay đổi gia tốc dùng để nhận biết va đập;
+- `f7_status`: `NORMAL`, `WARNING` hoặc `DANGER`.
 
-### `f7_readings`
+Main và F7 cùng gửi mỗi 2 giây. Backend giữ gói F7 mới nhất trong bộ nhớ rồi ghép vào bản ghi Main tiếp theo. Backend chỉ dùng gói F7 không quá 10 giây, tránh lưu dữ liệu cũ sau khi F7 mất kết nối.
 
-Mỗi MQTT telemetry từ F7 tạo một bản ghi riêng gồm:
-
-- `roll`, `pitch`: góc hiện tại của MPU6050;
-- `tilt`: độ nghiêng so với vị trí lúc calibration;
-- `vibration`: độ dao động trung bình trong nhóm mẫu;
-- `impact`: mức thay đổi gia tốc dùng để nhận biết va đập;
-- `status`: `NORMAL`, `WARNING` hoặc `DANGER`;
-- `recorded_at`: thời gian backend nhận dữ liệu.
-
-API kiểm tra lịch sử F7:
-
-```text
-GET http://localhost:8000/api/devices/f7/readings?limit=20
-```
+Không còn bảng riêng cho F7. Toàn bộ lịch sử của Main và F7 được đọc chung qua `GET /api/readings`.
 
 Khi tạo database mới thủ công, chạy `infrastructure/database/schema.sql` trước khi khởi động backend.
 
@@ -53,7 +39,7 @@ Các index chính:
 
 ## Khởi tạo
 
-File `infrastructure/database/schema.sql` chứa toàn bộ cấu trúc cuối cùng trong một transaction. Chạy file đúng một lần trên database trống; không cần chạy thêm `ALTER TABLE`. Nếu chạy nhầm lần thứ hai, PostgreSQL sẽ báo bảng đã tồn tại và rollback transaction.
+File `infrastructure/database/schema.sql` tạo đúng hai bảng `devices` và `sensor_readings` trong một transaction. Chạy file đúng một lần trên database trống; không cần chạy thêm `ALTER TABLE`. Nếu chạy nhầm lần thứ hai, PostgreSQL sẽ báo bảng đã tồn tại và rollback transaction.
 
 ## Cấu hình
 

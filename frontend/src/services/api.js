@@ -37,7 +37,7 @@ export function createReading(payload) {
   });
 }
 
-export function getLatestF7Reading() {
+export function getLatestF7Telemetry() {
   return request('/api/devices/f7/latest');
 }
 

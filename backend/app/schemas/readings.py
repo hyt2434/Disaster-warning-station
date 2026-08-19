@@ -12,10 +12,12 @@ class SensorReadingCreate(BaseModel):
     distance_cm: float | None = Field(default=None, ge=0)
     water_level_cm: float | None = Field(default=None, ge=0)
     water_level_percent: float | None = Field(default=None, ge=0, le=100)
-    angle_x: float | None = None
-    angle_y: float | None = None
-    vibration: float | None = Field(default=None, ge=0)
-    motion_status: str | None = Field(default=None, max_length=30)
+    f7_roll: float | None = None
+    f7_pitch: float | None = None
+    f7_tilt: float | None = Field(default=None, ge=0)
+    f7_vibration: float | None = Field(default=None, ge=0)
+    f7_impact: float | None = Field(default=None, ge=0)
+    f7_status: str | None = Field(default=None, max_length=30)
     status: str = Field(default="NORMAL", min_length=1, max_length=30)
     buzzer: bool | None = None
     buzzer_muted: bool | None = None
@@ -34,10 +36,12 @@ class SensorReadingResponse(BaseModel):
     distance_cm: float | None
     water_level_cm: float | None
     water_level_percent: float | None
-    angle_x: float | None
-    angle_y: float | None
-    vibration: float | None
-    motion_status: str | None
+    f7_roll: float | None
+    f7_pitch: float | None
+    f7_tilt: float | None
+    f7_vibration: float | None
+    f7_impact: float | None
+    f7_status: str | None
     status: str
     buzzer: bool | None
     buzzer_muted: bool | None

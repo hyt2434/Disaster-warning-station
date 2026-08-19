@@ -230,11 +230,10 @@ WARNING,1.2,2.1,12.0,1.35,2.10
 
 Khi backend nhận `disaster/f7/telemetry`, dữ liệu được:
 
-1. lưu vào bảng PostgreSQL `f7_readings`;
-2. giữ làm dữ liệu F7 mới nhất để ghép vào bản ghi `sensor_readings` tiếp theo;
-3. gửi độ rung lên Field 7 của channel ThingSpeak chung tối đa 15 giây/lần; nếu Main offline thì bản ghi Cloud chỉ có Field 7;
-4. dùng Field 5 và Field 7 để dự đoán trạng thái hệ thống sau 5 phút;
-5. cập nhật API `/api/devices/f7/latest` và `/api/devices/f7/readings`.
+1. giữ làm dữ liệu F7 mới nhất để ghép vào bản ghi `sensor_readings` tiếp theo;
+2. gửi độ rung lên Field 7 của channel ThingSpeak chung tối đa 15 giây/lần; nếu Main offline thì bản ghi Cloud chỉ có Field 7;
+3. dùng Field 5 và Field 7 để dự đoán trạng thái hệ thống sau 5 phút;
+4. cập nhật API thời gian thực `/api/devices/f7/latest`.
 
 ## 9. Lưu dữ liệu
 
@@ -244,7 +243,12 @@ Backend đổi tên camelCase từ ESP32 sang snake_case khi lưu:
 |---|---|---|
 | `distanceCm` | `distance_cm` | Không gửi |
 | `waterLevelCm` | `water_level_cm` | Field 4 |
-| `motion` | `motion_status` | Field 5: SAFE=0, WARNING=1, DANGER=2 |
+| F7 `roll` | `f7_roll` | Không gửi |
+| F7 `pitch` | `f7_pitch` | Không gửi |
+| F7 `tilt` | `f7_tilt` | Không gửi |
+| F7 `vibration` | `f7_vibration` | Field 7 |
+| F7 `impact` | `f7_impact` | Không gửi |
+| F7 `status` | `f7_status` | Field 5: SAFE=0, WARNING=1, DANGER=2 |
 | `system` | `status` | Field 6: SAFE=0, WARNING=1, DANGER=2 |
 | `buzzer` | `buzzer` | Không gửi |
 | `buzzerMuted` | `buzzer_muted` | Không gửi |

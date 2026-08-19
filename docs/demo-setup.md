@@ -121,7 +121,7 @@ Sau đó chạy file:
 infrastructure/database/schema.sql
 ```
 
-Chỉ chạy file này một lần trên database trống và chạy trước khi bật backend. File đã có sẵn các cột F7 `angle_x`, `angle_y`, `vibration`, `motion_status` và các cột còi, nên không cần chạy thêm `ALTER TABLE`.
+Chỉ chạy file này một lần trên database trống và chạy trước khi bật backend. File đã có sẵn các cột `f7_roll`, `f7_pitch`, `f7_tilt`, `f7_vibration`, `f7_impact`, `f7_status` trong `sensor_readings`, nên không cần bảng F7 riêng hoặc chạy thêm `ALTER TABLE`.
 
 ## 6. Cấu hình `.env`
 

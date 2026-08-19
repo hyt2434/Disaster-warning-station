@@ -8,8 +8,8 @@ import paho.mqtt.client as mqtt
 
 from ..config import settings
 from ..database import SessionLocal
-from ..database.repository import create_f7_reading, create_reading
-from ..schemas import F7ReadingCreate, SensorReadingCreate
+from ..database.repository import create_reading
+from ..schemas import SensorReadingCreate
 from ..services import ai_prediction_service, alert_service, thingspeak_client
 from ..services.alerts import build_f7_danger_message, build_main_danger_message
 from .topics import (
@@ -314,10 +314,12 @@ class MQTTClient:
                     distance_cm=sensor_record["distance_cm"],
                     water_level_cm=sensor_record["water_level_cm"],
                     water_level_percent=sensor_record["water_level_percent"],
-                    angle_x=sensor_record["motion_roll"],
-                    angle_y=sensor_record["motion_pitch"],
-                    vibration=sensor_record["motion_vibration"],
-                    motion_status=str(sensor_record["motion_status"]),
+                    f7_roll=sensor_record["motion_roll"],
+                    f7_pitch=sensor_record["motion_pitch"],
+                    f7_tilt=sensor_record["motion_tilt"],
+                    f7_vibration=sensor_record["motion_vibration"],
+                    f7_impact=sensor_record["motion_impact"],
+                    f7_status=str(sensor_record["motion_status"]),
                     status=str(sensor_record["system_status"]),
                     buzzer=sensor_record["buzzer"],
                     buzzer_muted=sensor_record["buzzer_muted"],
@@ -361,30 +363,6 @@ class MQTTClient:
             sensor_record["motion_status"],
         )
 
-    def _save_f7_to_postgresql(self, f7_record: dict) -> None:
-        database = SessionLocal()
-
-        try:
-            create_f7_reading(
-                database,
-                F7ReadingCreate(
-                    device_id=str(f7_record["device_id"]),
-                    roll=f7_record["roll"],
-                    pitch=f7_record["pitch"],
-                    tilt=f7_record["tilt"],
-                    vibration=f7_record["vibration"],
-                    impact=f7_record["impact"],
-                    status=str(f7_record["status"]),
-                    recorded_at=f7_record["received_at"],
-                ),
-            )
-            logger.info("Đã lưu telemetry F7 vào PostgreSQL.")
-        except Exception:
-            database.rollback()
-            logger.exception("Không thể lưu telemetry F7 vào PostgreSQL.")
-        finally:
-            database.close()
-
     def _handle_main_telemetry(self, telemetry: dict) -> None:
         sensor_record = normalize_main_telemetry(telemetry)
         self._last_main_telemetry_at = sensor_record["timestamp"]
@@ -410,7 +388,6 @@ class MQTTClient:
                 "received_at": datetime.now(timezone.utc),
             }
             self._f7_status = "direct"
-            self._save_f7_to_postgresql(self._latest_f7)
 
         # Main and F7 publish every 2 seconds. Add the latest F7 values to the
         # same PostgreSQL snapshot and to ThingSpeak Field 7.
@@ -440,8 +417,6 @@ class MQTTClient:
             "received_at": datetime.now(timezone.utc),
         }
         self._f7_status = "online"
-
-        self._save_f7_to_postgresql(self._latest_f7)
 
         main_data_is_recent = False
 

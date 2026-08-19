@@ -39,34 +39,15 @@ class SensorReading(Base):
     distance_cm: Mapped[float | None] = mapped_column(Float, nullable=True)
     water_level_cm: Mapped[float | None] = mapped_column(Float, nullable=True)
     water_level_percent: Mapped[float | None] = mapped_column(Float, nullable=True)
-    angle_x: Mapped[float | None] = mapped_column(Float, nullable=True)
-    angle_y: Mapped[float | None] = mapped_column(Float, nullable=True)
-    vibration: Mapped[float | None] = mapped_column(Float, nullable=True)
-    motion_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    f7_roll: Mapped[float | None] = mapped_column(Float, nullable=True)
+    f7_pitch: Mapped[float | None] = mapped_column(Float, nullable=True)
+    f7_tilt: Mapped[float | None] = mapped_column(Float, nullable=True)
+    f7_vibration: Mapped[float | None] = mapped_column(Float, nullable=True)
+    f7_impact: Mapped[float | None] = mapped_column(Float, nullable=True)
+    f7_status: Mapped[str | None] = mapped_column(String(30), nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="NORMAL")
     buzzer: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     buzzer_muted: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
-    recorded_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utc_now, index=True
-    )
-
-
-class F7Reading(Base):
-    __tablename__ = "f7_readings"
-    __table_args__ = (
-        Index("ix_f7_readings_device_recorded", "device_id", "recorded_at"),
-    )
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    device_id: Mapped[str] = mapped_column(
-        String(100), ForeignKey("devices.device_id", ondelete="CASCADE"), index=True
-    )
-    roll: Mapped[float | None] = mapped_column(Float, nullable=True)
-    pitch: Mapped[float | None] = mapped_column(Float, nullable=True)
-    tilt: Mapped[float | None] = mapped_column(Float, nullable=True)
-    vibration: Mapped[float | None] = mapped_column(Float, nullable=True)
-    impact: Mapped[float | None] = mapped_column(Float, nullable=True)
-    status: Mapped[str] = mapped_column(String(30), default="NORMAL")
     recorded_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utc_now, index=True
     )
