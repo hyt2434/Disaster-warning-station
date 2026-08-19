@@ -10,6 +10,9 @@ database_path = Path(tempfile.gettempdir()) / f"dws-test-{uuid4().hex}.sqlite"
 os.environ["DATABASE_URL"] = f"sqlite:///{database_path.as_posix()}"
 
 from backend.app.application import app  # noqa: E402
+from backend.app.database import SessionLocal  # noqa: E402
+from backend.app.database.repository import create_f7_reading  # noqa: E402
+from backend.app.schemas import F7ReadingCreate  # noqa: E402
 
 
 def test_health_and_reading_flow() -> None:
@@ -67,6 +70,8 @@ def test_health_and_reading_flow() -> None:
                 "distance_cm": 28.0,
                 "water_level_cm": 72.0,
                 "water_level_percent": 72.0,
+                "angle_x": 1.2,
+                "angle_y": -2.5,
                 "vibration": 0.4,
                 "motion_status": "safe",
                 "status": "warning",
@@ -110,4 +115,26 @@ def test_health_and_reading_flow() -> None:
         assert first_reading["gas_filtered"] == 1372.5
         assert first_reading["distance_cm"] == 28.0
         assert first_reading["water_level_percent"] == 72.0
+        assert first_reading["angle_x"] == 1.2
+        assert first_reading["angle_y"] == -2.5
         assert first_reading["vibration"] == 0.4
+
+        with SessionLocal() as database:
+            create_f7_reading(
+                database,
+                F7ReadingCreate(
+                    device_id="f7-station-test",
+                    roll=1.2,
+                    pitch=-2.5,
+                    tilt=3.1,
+                    vibration=0.25,
+                    impact=0.8,
+                    status="normal",
+                ),
+            )
+
+        f7_history = client.get("/api/devices/f7/readings", params={"limit": 20})
+        assert f7_history.status_code == 200
+        assert len(f7_history.json()) == 1
+        assert f7_history.json()[0]["status"] == "NORMAL"
+        assert f7_history.json()[0]["impact"] == 0.8

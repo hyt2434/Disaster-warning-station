@@ -8,8 +8,8 @@ import paho.mqtt.client as mqtt
 
 from ..config import settings
 from ..database import SessionLocal
-from ..database.repository import create_reading
-from ..schemas import SensorReadingCreate
+from ..database.repository import create_f7_reading, create_reading
+from ..schemas import F7ReadingCreate, SensorReadingCreate
 from ..services import ai_prediction_service, alert_service, thingspeak_client
 from .topics import (
     BACKEND_STATUS_TOPIC,
@@ -24,6 +24,7 @@ from .topics import (
 logger = logging.getLogger("uvicorn.error")
 
 SENSOR_HEIGHT_CM = 100.0
+F7_DATA_MAX_AGE_SECONDS = 10
 
 
 def first_available_value(
@@ -88,6 +89,8 @@ def normalize_main_telemetry(
             "SAFE",
         ),
         "motion_source": telemetry.get("motionSource", "MQTT"),
+        "motion_roll": telemetry.get("motionRoll"),
+        "motion_pitch": telemetry.get("motionPitch"),
         "motion_tilt": telemetry.get("motionTilt"),
         "motion_vibration": telemetry.get("motionVibration"),
         "motion_impact": telemetry.get("motionImpact"),
@@ -115,6 +118,7 @@ class MQTTClient:
         self._buzzer_state = "unknown"
         self._buzzer_muted: bool | None = None
         self._latest_f7: dict | None = None
+        self._last_main_telemetry_at: datetime | None = None
         self._latest_ai_prediction = (
             "not_run" if ai_prediction_service.is_available else "unavailable"
         )
@@ -309,6 +313,8 @@ class MQTTClient:
                     distance_cm=sensor_record["distance_cm"],
                     water_level_cm=sensor_record["water_level_cm"],
                     water_level_percent=sensor_record["water_level_percent"],
+                    angle_x=sensor_record["motion_roll"],
+                    angle_y=sensor_record["motion_pitch"],
                     vibration=sensor_record["motion_vibration"],
                     motion_status=str(sensor_record["motion_status"]),
                     status=str(sensor_record["system_status"]),
@@ -331,8 +337,56 @@ class MQTTClient:
             water_level_cm=sensor_record["water_level_cm"],
         )
 
+    def _add_latest_f7_data(self, sensor_record: dict) -> None:
+        """Attach the newest F7 values to the combined Main sensor record."""
+        if self._latest_f7 is None:
+            return
+
+        received_at = self._latest_f7.get("received_at")
+
+        if isinstance(received_at, datetime):
+            data_age = datetime.now(timezone.utc) - received_at
+
+            if data_age.total_seconds() > F7_DATA_MAX_AGE_SECONDS:
+                return
+
+        sensor_record["motion_roll"] = self._latest_f7.get("roll")
+        sensor_record["motion_pitch"] = self._latest_f7.get("pitch")
+        sensor_record["motion_tilt"] = self._latest_f7.get("tilt")
+        sensor_record["motion_vibration"] = self._latest_f7.get("vibration")
+        sensor_record["motion_impact"] = self._latest_f7.get("impact")
+        sensor_record["motion_status"] = self._latest_f7.get(
+            "status",
+            sensor_record["motion_status"],
+        )
+
+    def _save_f7_to_postgresql(self, f7_record: dict) -> None:
+        database = SessionLocal()
+
+        try:
+            create_f7_reading(
+                database,
+                F7ReadingCreate(
+                    device_id=str(f7_record["device_id"]),
+                    roll=f7_record["roll"],
+                    pitch=f7_record["pitch"],
+                    tilt=f7_record["tilt"],
+                    vibration=f7_record["vibration"],
+                    impact=f7_record["impact"],
+                    status=str(f7_record["status"]),
+                    recorded_at=f7_record["received_at"],
+                ),
+            )
+            logger.info("Đã lưu telemetry F7 vào PostgreSQL.")
+        except Exception:
+            database.rollback()
+            logger.exception("Không thể lưu telemetry F7 vào PostgreSQL.")
+        finally:
+            database.close()
+
     def _handle_main_telemetry(self, telemetry: dict) -> None:
         sensor_record = normalize_main_telemetry(telemetry)
+        self._last_main_telemetry_at = sensor_record["timestamp"]
 
         self._main_status = "online"
         self._system_state = str(sensor_record["system_status"]).lower()
@@ -346,8 +400,8 @@ class MQTTClient:
         if telemetry.get("motionSource") == "DIRECT":
             self._latest_f7 = {
                 "device_id": "f7-station-01",
-                "roll": None,
-                "pitch": None,
+                "roll": telemetry.get("motionRoll"),
+                "pitch": telemetry.get("motionPitch"),
                 "tilt": telemetry.get("motionTilt"),
                 "vibration": telemetry.get("motionVibration"),
                 "impact": telemetry.get("motionImpact"),
@@ -355,6 +409,11 @@ class MQTTClient:
                 "received_at": datetime.now(timezone.utc),
             }
             self._f7_status = "direct"
+            self._save_f7_to_postgresql(self._latest_f7)
+
+        # Main and F7 publish every 2 seconds. Add the latest F7 values to the
+        # same PostgreSQL snapshot and to ThingSpeak Field 7.
+        self._add_latest_f7_data(sensor_record)
 
         self._save_to_postgresql(sensor_record)
         thingspeak_client.upload(sensor_record)
@@ -386,6 +445,23 @@ class MQTTClient:
             "received_at": datetime.now(timezone.utc),
         }
         self._f7_status = "online"
+
+        self._save_f7_to_postgresql(self._latest_f7)
+
+        main_data_is_recent = False
+
+        if self._last_main_telemetry_at is not None:
+            main_data_age = datetime.now(timezone.utc) - self._last_main_telemetry_at
+            main_data_is_recent = (
+                main_data_age.total_seconds() <= F7_DATA_MAX_AGE_SECONDS
+            )
+
+        # If Main is offline, F7 still writes one partial row containing only
+        # Field 7. The shared ThingSpeak timer still limits uploads to 15 s.
+        if not main_data_is_recent:
+            thingspeak_client.upload({
+                "motion_vibration": self._latest_f7["vibration"],
+            })
 
         f7_status = str(self._latest_f7["status"]).upper()
         alert_message = (

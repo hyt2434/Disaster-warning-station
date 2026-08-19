@@ -86,13 +86,14 @@ và đưa kết quả vào model AI:
     "field3": 1450,
     "field4": 55.0,
     "field5": 0,
-    "field6": 1
+    "field6": 1,
+    "field7": 0.25
   }
 }
 ```
 
 `system_prediction` là `NORMAL`, `WARNING`, `DANGER` hoặc `INSUFFICIENT_DATA`.
-Field 6 không được đưa vào model vì nó đã chứa kết quả trạng thái do ESP32 tính.
+Field 6 không được đưa vào model vì nó đã chứa kết quả trạng thái do ESP32 tính. Model Random Forest tiếp tục dùng cảm biến môi trường của Main; xu hướng F7 được kiểm tra theo ngưỡng và kết hợp vào `system_prediction`.
 
 ## `GET /api/readings/thingspeak-history`
 
@@ -110,13 +111,34 @@ Trả tối đa 20 bản ghi gần nhất được đọc trực tiếp từ Thi
       "field3": 1200.0,
       "field4": 55.0,
       "field5": 0.0,
-      "field6": 0.0
+      "field6": 0.0,
+      "field7": 0.25
     }
   ]
 }
 ```
 
-Frontend có thể chọn Field 1–6 trên cùng một biểu đồ time series.
+Kết quả gồm các Field 1–7 của một channel ThingSpeak. Frontend dùng Field 7 để vẽ biểu đồ độ rung F7.
+
+## `GET /api/devices/f7/readings?limit=20`
+
+Đọc lịch sử F7 đã lưu trong PostgreSQL, mới nhất trước:
+
+```json
+[
+  {
+    "id": 1,
+    "device_id": "f7-station-01",
+    "roll": 1.2,
+    "pitch": -2.5,
+    "tilt": 3.1,
+    "vibration": 0.25,
+    "impact": 0.8,
+    "status": "NORMAL",
+    "recorded_at": "2026-08-19T10:00:00Z"
+  }
+]
+```
 
 ## `POST /api/devices/main/buzzer`
 

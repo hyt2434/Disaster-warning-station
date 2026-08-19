@@ -10,7 +10,7 @@ from backend.app.services.ai_prediction import ai_prediction_service
 from ai.retrain import prepare_training_data
 
 
-def test_thingspeak_payload_uses_six_simple_fields() -> None:
+def test_thingspeak_payload_uses_seven_simple_fields() -> None:
     sensor_record = {
         "temperature": 32.5,
         "humidity": 68.0,
@@ -18,6 +18,7 @@ def test_thingspeak_payload_uses_six_simple_fields() -> None:
         "water_level_cm": 65.0,
         "motion_status": "WARNING",
         "system_status": "DANGER",
+        "motion_vibration": 0.25,
     }
 
     payload = build_thingspeak_payload(sensor_record, "test-key")
@@ -30,6 +31,7 @@ def test_thingspeak_payload_uses_six_simple_fields() -> None:
         "field4": 65.0,
         "field5": 1,
         "field6": 2,
+        "field7": 0.25,
     }
 
 
@@ -48,6 +50,18 @@ def test_thingspeak_payload_does_not_change_null_water_to_zero() -> None:
     assert "field4" not in payload
     assert payload["field5"] == 0
     assert payload["field6"] == 0
+
+
+def test_f7_can_upload_only_field7_when_main_is_offline() -> None:
+    payload = build_thingspeak_payload(
+        {"motion_vibration": 0.42},
+        "test-key",
+    )
+
+    assert payload == {
+        "api_key": "test-key",
+        "field7": 0.42,
+    }
 
 
 def test_ai_training_reads_thingspeak_field_mapping() -> None:
@@ -81,7 +95,7 @@ def test_ai_training_reads_thingspeak_field_mapping() -> None:
     assert labels.iloc[-1] == 1
 
 
-def test_future_value_estimation_reads_all_six_thingspeak_fields() -> None:
+def test_future_value_estimation_reads_all_seven_thingspeak_fields() -> None:
     start_time = datetime(2026, 8, 19, 10, 0, tzinfo=timezone.utc)
     feeds = []
 
@@ -94,13 +108,14 @@ def test_future_value_estimation_reads_all_six_thingspeak_fields() -> None:
             "field4": str(50 + index * 0.1),
             "field5": "0",
             "field6": "0" if index < 10 else "1",
+            "field7": str(index * 0.02),
         })
 
     result = calculate_five_minute_values(feeds)
 
     assert result["prediction_minutes"] == 5
     assert result["sample_count"] == 20
-    assert len(result["fields"]) == 6
+    assert len(result["fields"]) == 7
     assert result["fields"][0]["predicted"] > 31.9
     assert result["fields"][1]["predicted"] == 70
     assert result["fields"][5]["predicted"] == 2
@@ -115,6 +130,7 @@ def test_thingspeak_history_is_ready_for_frontend_chart() -> None:
         "field4": "55",
         "field5": "0",
         "field6": "1",
+        "field7": "0.25",
     }]
 
     history = normalize_thingspeak_history(feeds)
@@ -122,6 +138,7 @@ def test_thingspeak_history_is_ready_for_frontend_chart() -> None:
     assert history[0]["recorded_at"] == "2026-08-19T10:00:00Z"
     assert history[0]["field1"] == 31.5
     assert history[0]["field6"] == 1.0
+    assert history[0]["field7"] == 0.25
 
 
 def test_future_values_are_sent_to_ai_and_warning_cause_is_explained(
@@ -146,6 +163,7 @@ def test_future_values_are_sent_to_ai_and_warning_cause_is_explained(
             {"field": "field4", "predicted": 55.0},
             {"field": "field5", "predicted": 0},
             {"field": "field6", "predicted": 2},
+            {"field": "field7", "predicted": 0.2},
         ],
     }
 
@@ -156,3 +174,27 @@ def test_future_values_are_sent_to_ai_and_warning_cause_is_explained(
     assert result["system_prediction"] == "WARNING"
     assert result["causes"][0]["sensor"] == "Nhiệt độ"
     assert result["causes"][0]["level"] == "WARNING"
+
+
+def test_f7_vibration_trend_can_make_system_danger(monkeypatch) -> None:
+    monkeypatch.setattr(ai_prediction_service, "predict", lambda **_: "safe")
+
+    main_future_data = {
+        "source": "ThingSpeak",
+        "prediction_minutes": 5,
+        "sample_count": 20,
+        "fields": [
+            {"field": "field1", "predicted": 30.0},
+            {"field": "field2", "predicted": 70.0},
+            {"field": "field3", "predicted": 900.0},
+            {"field": "field4", "predicted": 40.0},
+            {"field": "field5", "predicted": 0},
+            {"field": "field6", "predicted": 0},
+            {"field": "field7", "predicted": 2.5},
+        ],
+    }
+
+    result = build_system_prediction(main_future_data)
+
+    assert result["system_prediction"] == "DANGER"
+    assert any(cause["sensor"] == "Rung F7" for cause in result["causes"])

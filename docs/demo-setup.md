@@ -121,7 +121,7 @@ Sau đó chạy file:
 infrastructure/database/schema.sql
 ```
 
-File schema đã có sẵn các cột mới `motion_status`, `buzzer` và `buzzer_muted`. Backend không chạy lệnh `ALTER TABLE` khi khởi động.
+Chỉ chạy file này một lần trên database trống và chạy trước khi bật backend. File đã có sẵn các cột F7 `angle_x`, `angle_y`, `vibration`, `motion_status` và các cột còi, nên không cần chạy thêm `ALTER TABLE`.
 
 ## 6. Cấu hình `.env`
 
@@ -156,6 +156,7 @@ Tạo một channel và đặt tên các field:
 | Field 4 | Water Level |
 | Field 5 | Motion Status |
 | Field 6 | System Status |
+| Field 7 | F7 Vibration |
 
 Trạng thái được đổi thành số để vẽ biểu đồ:
 
@@ -182,7 +183,36 @@ const char* MQTT_HOST = "IP_MAY_TINH_CHAY_MOSQUITTO";
 
 Chọn đúng board và cổng, sau đó `Verify` và `Upload`. Serial Monitor dùng `115200 baud`.
 
-## 9. Chạy chương trình
+## 9. Cấu hình F7 và kiểm tra đường truyền dự phòng
+
+Mở `firmware/f7_station/f7_station.ino` và điền cùng Wi-Fi, MQTT broker với Main:
+
+```cpp
+const char* HOME_WIFI_SSID = "YOUR_WIFI_SSID";
+const char* HOME_WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
+const char* MQTT_HOST = "IP_MAY_TINH_CHAY_MOSQUITTO";
+```
+
+F7 đọc MPU6050 và publish MQTT mỗi 2 giây. Frontend gọi API mỗi 2 giây nên dữ liệu F7 tự cập nhật khi luồng `F7 -> MQTT -> Backend -> Web` hoạt động.
+
+F7 luôn tạo mạng dự phòng `DISASTER_F7_DIRECT`. Khi Main không vào được Wi-Fi nhà trong 8 giây, Main kết nối mạng này và nhận gói UDP từ F7. Gói local gồm:
+
+```text
+STATUS,ROLL,PITCH,TILT,VIBRATION,IMPACT
+```
+
+Để test mà không cần tắt router:
+
+1. Đổi `LOCAL_TEST_MODE = true` trong cả `f7_station.ino` và `main_station.ino`.
+2. Nạp F7 trước, sau đó nạp Main.
+3. Mở hai Serial Monitor ở `115200 baud`.
+4. F7 phải in `Main connected to F7 WiFi: YES`.
+5. Main phải in `Connected to F7` và các dòng `[UDP] Motion` mỗi 2 giây.
+6. Test xong, đổi hai cờ về `false` và nạp lại để chạy bình thường.
+
+Lưu ý: đường UDP này giữ cảnh báo local giữa hai ESP khi mất mạng nhà. Nếu máy chạy backend cũng mất kết nối với hai ESP thì website không thể nhận dữ liệu mới cho tới khi đường MQTT hoạt động lại.
+
+## 10. Chạy chương trình
 
 Backend:
 
@@ -201,7 +231,7 @@ npm run dev
 
 Mở `http://localhost:5173`.
 
-## 10. Retrain AI từ ThingSpeak
+## 11. Retrain AI từ ThingSpeak
 
 Sau khi ThingSpeak có ít nhất 100 bản ghi hợp lệ:
 
@@ -217,14 +247,14 @@ backend/app/ml_models/disaster_model.pkl
 
 Khởi động lại backend sau khi retrain để nạp model mới.
 
-## 11. Kiểm tra nhanh trước khi demo
+## 12. Kiểm tra nhanh trước khi demo
 
 | Kiểm tra | Kết quả mong đợi |
 |---|---|
 | ESP32 Serial | Có Wi-Fi, MQTT và telemetry JSON |
 | Backend `/api/health` | PostgreSQL, MQTT và ThingSpeak có trạng thái |
 | PostgreSQL | Bảng `sensor_readings` tăng bản ghi |
-| ThingSpeak | Field 1–6 cập nhật khoảng 15 giây/lần |
+| ThingSpeak | Field 1–7 cập nhật khoảng 15 giây/lần; Field 7 là độ rung F7 |
 | Pushsafer | Có thông báo khi hệ thống mới chuyển sang WARNING/DANGER |
 | Website | Hiện nhiệt độ, gas, nước, System, Buzzer và Mute |
 | Nhấn OFF khi DANGER | Còi tắt nhưng System vẫn DANGER |

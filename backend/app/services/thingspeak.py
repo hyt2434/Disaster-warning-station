@@ -25,6 +25,9 @@ WATER_DANGER = 70.0
 MOTION_WARNING = 1
 MOTION_DANGER = 2
 
+F7_VIBRATION_WARNING = 0.80
+F7_VIBRATION_DANGER = 2.00
+
 STATUS_NUMBER = {
     "NORMAL": 0,
     "SAFE": 0,
@@ -69,6 +72,12 @@ TREND_FIELDS = [
         "maximum": 2,
         "is_status": True,
     },
+    {
+        "field": "field7",
+        "minimum": 0,
+        "maximum": 40,
+        "is_status": False,
+    },
 ]
 
 
@@ -81,11 +90,17 @@ def _limit_value(value: float, minimum: float, maximum: float) -> float:
     return max(minimum, min(value, maximum))
 
 
-def calculate_five_minute_values(feeds: list[dict]) -> dict:
-    """Estimate the six ThingSpeak field values five minutes from now."""
+def calculate_five_minute_values(
+    feeds: list[dict],
+    field_configs: list[dict] | None = None,
+) -> dict:
+    """Estimate configured ThingSpeak field values five minutes from now."""
     field_predictions = []
 
-    for field_config in TREND_FIELDS:
+    if field_configs is None:
+        field_configs = TREND_FIELDS
+
+    for field_config in field_configs:
         field_name = field_config["field"]
         valid_points = []
 
@@ -173,7 +188,7 @@ def _add_cause(
 
 
 def build_system_prediction(future_data: dict) -> dict:
-    """Use future ThingSpeak values and the trained model for one system result."""
+    """Combine the AI result and all seven ThingSpeak field trends."""
     fields_by_name = {
         field["field"]: field
         for field in future_data["fields"]
@@ -184,6 +199,7 @@ def build_system_prediction(future_data: dict) -> dict:
     gas_level = fields_by_name["field3"]["predicted"]
     water_level = fields_by_name["field4"]["predicted"]
     motion_status = fields_by_name["field5"]["predicted"]
+    f7_vibration = fields_by_name["field7"]["predicted"]
 
     model_result = ai_prediction_service.predict(
         temperature=temperature,
@@ -238,6 +254,17 @@ def build_system_prediction(future_data: dict) -> dict:
             MOTION_DANGER,
         )
 
+    if f7_vibration is not None:
+        _add_cause(
+            causes,
+            "field7",
+            "Rung F7",
+            f7_vibration,
+            "m/s2",
+            F7_VIBRATION_WARNING,
+            F7_VIBRATION_DANGER,
+        )
+
     has_danger_cause = any(cause["level"] == "DANGER" for cause in causes)
     has_warning_cause = any(cause["level"] == "WARNING" for cause in causes)
 
@@ -267,8 +294,17 @@ def build_system_prediction(future_data: dict) -> dict:
 
 def build_thingspeak_payload(sensor_record: dict, api_key: str) -> dict:
     """Convert one normalized sensor record to ThingSpeak fields."""
-    motion_status = str(sensor_record.get("motion_status", "SAFE")).upper()
-    system_status = str(sensor_record.get("system_status", "SAFE")).upper()
+    motion_status = sensor_record.get("motion_status")
+    system_status = sensor_record.get("system_status")
+
+    motion_status_number = None
+    system_status_number = None
+
+    if motion_status is not None:
+        motion_status_number = STATUS_NUMBER.get(str(motion_status).upper(), 0)
+
+    if system_status is not None:
+        system_status_number = STATUS_NUMBER.get(str(system_status).upper(), 0)
 
     payload = {
         "api_key": api_key,
@@ -276,8 +312,9 @@ def build_thingspeak_payload(sensor_record: dict, api_key: str) -> dict:
         "field2": sensor_record.get("humidity"),
         "field3": sensor_record.get("gas_filtered"),
         "field4": sensor_record.get("water_level_cm"),
-        "field5": STATUS_NUMBER.get(motion_status, 0),
-        "field6": STATUS_NUMBER.get(system_status, 0),
+        "field5": motion_status_number,
+        "field6": system_status_number,
+        "field7": sensor_record.get("motion_vibration"),
     }
 
     # ThingSpeak should receive no field when a sensor value is unknown.
@@ -288,7 +325,10 @@ def build_thingspeak_payload(sensor_record: dict, api_key: str) -> dict:
     }
 
 
-def normalize_thingspeak_history(feeds: list[dict]) -> list[dict]:
+def normalize_thingspeak_history(
+    feeds: list[dict],
+    field_count: int = 7,
+) -> list[dict]:
     """Convert ThingSpeak strings to values that the frontend can chart."""
     history = []
 
@@ -297,7 +337,7 @@ def normalize_thingspeak_history(feeds: list[dict]) -> list[dict]:
             "recorded_at": feed.get("created_at"),
         }
 
-        for field_number in range(1, 7):
+        for field_number in range(1, field_count + 1):
             field_name = f"field{field_number}"
             raw_value = feed.get(field_name)
 

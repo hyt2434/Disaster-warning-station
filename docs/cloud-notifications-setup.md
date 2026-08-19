@@ -9,7 +9,7 @@ Backend là nơi kết nối hai dịch vụ Cloud. ESP32 chỉ gửi telemetry 
 1. Đăng nhập [ThingSpeak](https://thingspeak.mathworks.com/).
 2. Chọn **Channels → My Channels → New Channel**.
 3. Đặt tên channel, ví dụ `Disaster Warning Station`.
-4. Bật và đặt tên sáu field đúng thứ tự sau, rồi chọn **Save Channel**.
+4. Bật và đặt tên bảy field đúng thứ tự sau, rồi chọn **Save Channel**.
 
 | Field | Tên đề xuất | Dữ liệu backend gửi |
 |---|---|---|
@@ -19,6 +19,7 @@ Backend là nơi kết nối hai dịch vụ Cloud. ESP32 chỉ gửi telemetry 
 | Field 4 | Water Level | Mực nước (cm) |
 | Field 5 | Motion Status | SAFE = 0, WARNING = 1, DANGER = 2 |
 | Field 6 | System Status | SAFE = 0, WARNING = 1, DANGER = 2 |
+| Field 7 | F7 Vibration | Độ rung của MPU6050 (m/s²) |
 
 ### Lấy ID và API key
 
@@ -40,7 +41,7 @@ Không thêm dấu ngoặc `< >` và không commit file `.env`.
 
 ### Kiểm tra ThingSpeak
 
-Khởi động MQTT, backend và ESP32. Chờ ít nhất 15 giây rồi mở tab **Private View** của channel. Field 1–6 phải bắt đầu có dữ liệu.
+Khởi động MQTT, backend và hai ESP32. Chờ ít nhất 15 giây rồi mở tab **Private View** của channel. Field 1–7 phải bắt đầu có dữ liệu. Khi Main mất kết nối nhưng F7 vẫn online, backend tiếp tục tạo bản ghi Cloud chỉ có Field 7.
 
 Bạn cũng có thể kiểm tra riêng Write API Key trong PowerShell:
 
@@ -49,18 +50,16 @@ $thingSpeakBody = @{
     api_key = "YOUR_WRITE_API_KEY"
     field1 = 30.5
     field2 = 70
+    field7 = 0.25
 }
 Invoke-RestMethod -Method Post -Uri "https://api.thingspeak.com/update.json" -Body $thingSpeakBody
 ```
 
 Nếu thành công, ThingSpeak trả về bản ghi mới. Nếu bị từ chối, kiểm tra Write API Key và chờ đủ 15 giây trước lần gửi tiếp theo.
 
-Frontend F5 không đọc API key trực tiếp. Backend dùng `Channel ID` và `Read API Key`
-để lấy 20 bản ghi gần nhất. Backend ước lượng dữ liệu sau 5 phút, đưa Field 1–4
-vào model AI và kiểm tra trạng thái chuyển động ở Field 5. Frontend chỉ hiện dự đoán
-toàn hệ thống và các dữ liệu có khả năng gây `WARNING` hoặc `DANGER`.
+Frontend F5 không đọc API key trực tiếp. Backend dùng Channel ID và Read API Key để lấy 20 bản ghi gần nhất. Field 1–4 đi vào model AI; Field 5 và Field 7 giúp kiểm tra xu hướng chuyển động và rung F7 sau 5 phút. Sau đó backend tổng hợp thành một kết quả toàn hệ thống.
 
-Frontend F4 dùng cùng dữ liệu Cloud để vẽ biểu đồ lịch sử Field 1–6. ESP32 và monitor
+Frontend F4 cho phép chọn biểu đồ Field 1–7 của cùng một channel. ESP32 và monitor
 local cập nhật mỗi 2 giây; biểu đồ ThingSpeak cập nhật khoảng 15 giây/lần theo giới hạn Cloud.
 
 ## 2. Pushsafer
@@ -119,7 +118,7 @@ Kết quả thành công có `status = 1`. Sau đó chạy backend và kiểm tr
 1. Khởi động PostgreSQL và MQTT Broker.
 2. Chạy `python backend/app.py` từ thư mục gốc, hoặc `python app.py` khi đang ở `backend`.
 3. Bật ESP32 và kiểm tra MQTT telemetry trong log backend.
-4. Chờ ThingSpeak cập nhật Field 1–6.
+4. Chờ ThingSpeak cập nhật Field 1–7.
 5. Tạo điều kiện `WARNING`/`DANGER` một lần và kiểm tra điện thoại nhận Pushsafer.
 
 API key chỉ thuộc backend. Không đưa key vào frontend, firmware hoặc ảnh chụp màn hình khi nộp bài.

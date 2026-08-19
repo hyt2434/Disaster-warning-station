@@ -6,8 +6,9 @@ const FIELD_OPTIONS = [
   { value: 'field2', label: 'Độ ẩm', unit: '%' },
   { value: 'field3', label: 'Khói / gas', unit: 'ADC' },
   { value: 'field4', label: 'Mực nước', unit: 'cm' },
-  { value: 'field5', label: 'Chuyển động', unit: 'status' },
+  { value: 'field5', label: 'Chuyển động F7', unit: 'status' },
   { value: 'field6', label: 'Trạng thái hệ thống', unit: 'status' },
+  { value: 'field7', label: 'F7 - Rung', unit: 'm/s²' },
 ];
 
 const STATUS_LABELS = {
@@ -103,9 +104,10 @@ export function ThingSpeakHistoryChart({ cloudHistory, historyError }) {
   const [selectedField, setSelectedField] = useState('field1');
   const selectedOption = FIELD_OPTIONS.find((option) => option.value === selectedField);
   const readings = cloudHistory?.readings ?? [];
+  const sampleCount = cloudHistory?.sample_count ?? 0;
   const chartData = createChartPoints(
     readings,
-    selectedField,
+    selectedOption.value,
     selectedOption.unit === 'status',
   );
 
@@ -180,7 +182,7 @@ export function ThingSpeakHistoryChart({ cloudHistory, historyError }) {
       </svg>
 
       <p>
-        Nguồn: ThingSpeak Cloud · {cloudHistory.sample_count} bản ghi gần nhất ·
+        Nguồn: ThingSpeak Cloud · {sampleCount} bản ghi gần nhất ·
         Cloud cập nhật khoảng 15 giây/lần.
       </p>
     </div>

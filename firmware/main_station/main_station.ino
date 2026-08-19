@@ -12,8 +12,8 @@
  *   XIAO ESP32-C3 + MPU6050 -> motion
  *
  * NETWORK:
- *   Normal   : C3 -> Home WiFi -> MQTT -> S3
- *   Fallback : C3 -> S3 private AP -> UDP -> S3
+ *   Normal   : F7 -> Home WiFi -> MQTT -> Main
+ *   Fallback : F7 creates private AP -> Main connects -> UDP -> Main
  *
  * SYSTEM LEVEL:
  *   Highest of temperature / gas / water / motion
@@ -36,7 +36,8 @@
  *   Buzzer command : disaster/main/command/buzzer
  *                     payload: ON / OFF
  *
- * Buzzer state   : disaster/main/state/buzzer payload: ON / OFF Motion state   : disaster/f7/state
+ *   Buzzer state : disaster/main/state/buzzer payload: ON / OFF
+ *   Motion state : disaster/f7/state
  *   Main status    : disaster/main/status
  *
  * WATER:
@@ -85,18 +86,18 @@ const char* TOPIC_MOTION = "disaster/f7/state";
 const char* TOPIC_STATUS = "disaster/main/status";
 
 // ============================================================
-// 2. FALLBACK AP + UDP
+// 2. F7 FALLBACK WIFI + UDP
 // ============================================================
 
-const char* DIRECT_AP_SSID = "DISASTER_MAIN_DIRECT";
-
-const char* DIRECT_AP_PASSWORD = "12345678";
+// F7 creates this WiFi access point. Main joins it when Home WiFi is lost.
+const char* F7_AP_SSID = "DISASTER_F7_DIRECT";
+const char* F7_AP_PASSWORD = "12345678";
 
 const int DIRECT_UDP_PORT = 4210;
 
-IPAddress DIRECT_AP_IP(192, 168, 4, 1);
-IPAddress DIRECT_AP_GATEWAY(192, 168, 4, 1);
-IPAddress DIRECT_AP_SUBNET(255, 255, 255, 0);
+// false: connect to Home WiFi first.
+// true : connect directly to F7 for the local fallback test.
+const bool LOCAL_TEST_MODE = false;
 
 // ============================================================
 // 3. PINS
@@ -152,9 +153,11 @@ const float WATER_DANGER_CM = 70.0;
 // Read local sensors and publish their latest values every 2 seconds.
 const unsigned long SENSOR_INTERVAL_MS = 2000;
 const unsigned long TELEMETRY_INTERVAL_MS = 2000;
-const unsigned long MOTION_TIMEOUT_MS = 4000;
+const unsigned long MOTION_TIMEOUT_MS = 6000;
 const unsigned long MQTT_RETRY_MS = 5000;
 const unsigned long NETWORK_LOG_INTERVAL_MS = 5000;
+const unsigned long HOME_WIFI_FAILOVER_MS = 8000;
+const unsigned long DIRECT_WIFI_RETRY_MS = 5000;
 
 // ============================================================
 // 7. OBJECTS
@@ -192,6 +195,8 @@ int systemLevel = SAFE;
 // 9. MOTION FROM C3
 // ============================================================
 
+float motionRoll = 0.0;
+float motionPitch = 0.0;
 float motionTilt = 0.0;
 float motionVibration = 0.0;
 float motionImpact = 0.0;
@@ -216,12 +221,17 @@ bool previousBuzzerOn = false;
 // 11. NETWORK / TIMERS
 // ============================================================
 
+bool directMode = false;
+bool udpListenerStarted = false;
 bool homeWiFiWasConnected = false;
+bool directWiFiWasConnected = false;
 
 unsigned long lastSensorRead = 0;
 unsigned long lastTelemetry = 0;
 unsigned long lastMQTTRetry = 0;
 unsigned long lastNetworkStatusLog = 0;
+unsigned long homeWiFiLostSince = 0;
+unsigned long lastDirectWiFiRetry = 0;
 
 // ============================================================
 // 12. HELPERS
@@ -581,6 +591,11 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
 
 void receiveMotionThroughUdp()
 {
+  if (!directMode || !udpListenerStarted)
+  {
+    return;
+  }
+
   int packetSize = udp.parsePacket();
 
   if (packetSize <= 0)
@@ -607,7 +622,7 @@ void receiveMotionThroughUdp()
   if (comma1 < 0)
   {
     motionLevel = textToLevel(packet);
-    motionSource = "UDP";
+    motionSource = "DIRECT";
     lastMotionUpdate = millis();
 
     Serial.print("[UDP] Motion -> ");
@@ -615,11 +630,13 @@ void receiveMotionThroughUdp()
     return;
   }
 
-  // Full packet: STATUS,TILT,VIBRATION,IMPACT
+  // Full packet: STATUS,ROLL,PITCH,TILT,VIBRATION,IMPACT
   int comma2 = packet.indexOf(',', comma1 + 1);
   int comma3 = packet.indexOf(',', comma2 + 1);
+  int comma4 = packet.indexOf(',', comma3 + 1);
+  int comma5 = packet.indexOf(',', comma4 + 1);
 
-  if (comma2 < 0 || comma3 < 0)
+  if (comma2 < 0 || comma3 < 0 || comma4 < 0 || comma5 < 0)
   {
     Serial.print("[UDP] Invalid motion packet: ");
     Serial.println(packet);
@@ -628,13 +645,17 @@ void receiveMotionThroughUdp()
 
   motionLevel = textToLevel(packet.substring(0, comma1));
 
-  motionTilt = packet.substring(comma1 + 1, comma2).toFloat();
+  motionRoll = packet.substring(comma1 + 1, comma2).toFloat();
 
-  motionVibration = packet.substring(comma2 + 1, comma3).toFloat();
+  motionPitch = packet.substring(comma2 + 1, comma3).toFloat();
 
-  motionImpact = packet.substring(comma3 + 1).toFloat();
+  motionTilt = packet.substring(comma3 + 1, comma4).toFloat();
 
-  motionSource = "UDP";
+  motionVibration = packet.substring(comma4 + 1, comma5).toFloat();
+
+  motionImpact = packet.substring(comma5 + 1).toFloat();
+
+  motionSource = "DIRECT";
   lastMotionUpdate = millis();
 
   Serial.print("[UDP] Motion -> ");
@@ -769,93 +790,157 @@ void updateBuzzer()
 void startWiFi()
 {
   Serial.println();
-  Serial.println("[WiFi] Starting AP + STA...");
+  Serial.println("[WiFi] Starting station mode...");
 
-  WiFi.mode(WIFI_AP_STA);
+  WiFi.mode(WIFI_STA);
   WiFi.persistent(false);
   WiFi.setSleep(false);
   WiFi.setAutoReconnect(true);
 
-  WiFi.softAPConfig(DIRECT_AP_IP, DIRECT_AP_GATEWAY, DIRECT_AP_SUBNET);
-
-  bool accessPointStarted = WiFi.softAP(DIRECT_AP_SSID, DIRECT_AP_PASSWORD);
-
-  if (accessPointStarted)
+  if (LOCAL_TEST_MODE)
   {
-    Serial.println("[DIRECT] Fallback AP started");
-    Serial.print("[DIRECT] SSID: ");
-    Serial.println(DIRECT_AP_SSID);
-    Serial.print("[DIRECT] IP: ");
-    Serial.println(WiFi.softAPIP());
-  }
-  else
-  {
-    Serial.println("[DIRECT] Failed to start fallback AP");
+    directMode = true;
+    Serial.println("[TEST] LOCAL_TEST_MODE is ON");
+    Serial.print("[DIRECT] Connecting to F7 WiFi: ");
+    Serial.println(F7_AP_SSID);
+    WiFi.begin(F7_AP_SSID, F7_AP_PASSWORD);
+    lastDirectWiFiRetry = millis();
+    return;
   }
 
-  bool udpListenerStarted = udp.begin(DIRECT_UDP_PORT);
-
-  Serial.print("[DIRECT] UDP: ");
-  Serial.println(udpListenerStarted ? "OK" : "FAILED");
-
-  Serial.print("[DIRECT] UDP port: ");
-  Serial.println(DIRECT_UDP_PORT);
-
-  Serial.println();
   Serial.print("[WiFi] Connecting HOME: ");
   Serial.println(HOME_WIFI_SSID);
 
-  // Call only once. Auto reconnect handles temporary disconnects.
   WiFi.begin(HOME_WIFI_SSID, HOME_WIFI_PASSWORD);
+  homeWiFiLostSince = millis();
+}
+
+void switchToF7DirectWiFi()
+{
+  directMode = true;
+  homeWiFiWasConnected = false;
+  mqttClient.disconnect();
+
+  Serial.println();
+  Serial.println("[DIRECT] Switching Main to F7 fallback WiFi");
+  Serial.print("[DIRECT] SSID: ");
+  Serial.println(F7_AP_SSID);
+
+  WiFi.disconnect();
+  delay(100);
+  WiFi.begin(F7_AP_SSID, F7_AP_PASSWORD);
+
+  lastDirectWiFiRetry = millis();
+}
+
+void startUdpListener()
+{
+  if (udpListenerStarted)
+  {
+    return;
+  }
+
+  udpListenerStarted = udp.begin(DIRECT_UDP_PORT);
+
+  Serial.print("[DIRECT] UDP listener: ");
+  Serial.println(udpListenerStarted ? "READY" : "FAILED");
+  Serial.print("[DIRECT] UDP port: ");
+  Serial.println(DIRECT_UDP_PORT);
 }
 
 void maintainWiFi()
 {
-  bool connected = WiFi.status() == WL_CONNECTED;
-
-  if (connected && !homeWiFiWasConnected)
-  {
-    homeWiFiWasConnected = true;
-
-    Serial.println();
-    Serial.println("[WiFi] HOME CONNECTED");
-
-    Serial.print("[WiFi] STA IP: ");
-    Serial.println(WiFi.localIP());
-
-    Serial.print("[WiFi] RSSI: ");
-    Serial.print(WiFi.RSSI());
-    Serial.println(" dBm");
-
-    Serial.print("[MQTT] Broker: ");
-    Serial.print(MQTT_HOST);
-    Serial.print(":");
-    Serial.println(MQTT_PORT);
-  }
-
-  if (!connected && homeWiFiWasConnected)
-  {
-    homeWiFiWasConnected = false;
-
-    Serial.println();
-    Serial.println("[WiFi] HOME LOST");
-    Serial.println("[DIRECT] Fallback AP remains active");
-  }
-
   unsigned long currentTime = millis();
 
-  if (!connected && currentTime - lastNetworkStatusLog >= NETWORK_LOG_INTERVAL_MS)
+  // --------------------------------------------------------
+  // NORMAL MODE: use Home WiFi and MQTT.
+  // --------------------------------------------------------
+  if (!directMode)
   {
-    lastNetworkStatusLog = currentTime;
+    bool homeConnected = WiFi.status() == WL_CONNECTED;
 
-    Serial.print("[WiFi] HOME status: ");
-    Serial.print(wifiStatusToText(WiFi.status()));
-    Serial.print(" | code=");
-    Serial.println((int)WiFi.status());
+    if (homeConnected)
+    {
+      homeWiFiLostSince = 0;
+
+      if (!homeWiFiWasConnected)
+      {
+        homeWiFiWasConnected = true;
+
+        Serial.println();
+        Serial.println("[WiFi] HOME CONNECTED");
+        Serial.print("[WiFi] IP: ");
+        Serial.println(WiFi.localIP());
+        Serial.print("[MQTT] Broker: ");
+        Serial.print(MQTT_HOST);
+        Serial.print(":");
+        Serial.println(MQTT_PORT);
+      }
+
+      return;
+    }
+
+    if (homeWiFiWasConnected)
+    {
+      homeWiFiWasConnected = false;
+      Serial.println("[WiFi] HOME LOST");
+    }
+
+    if (homeWiFiLostSince == 0)
+    {
+      homeWiFiLostSince = currentTime;
+    }
+
+    if (currentTime - homeWiFiLostSince >= HOME_WIFI_FAILOVER_MS)
+    {
+      switchToF7DirectWiFi();
+      return;
+    }
+
+    if (currentTime - lastNetworkStatusLog >= NETWORK_LOG_INTERVAL_MS)
+    {
+      lastNetworkStatusLog = currentTime;
+      Serial.println("[WiFi] Waiting for Home WiFi...");
+    }
+
+    return;
   }
 
-  // Do not repeatedly call WiFi.begin()/disconnect()/reconnect() here.
-  // setAutoReconnect(true) is responsible for STA reconnection.
+  // --------------------------------------------------------
+  // DIRECT MODE: Main joins the access point created by F7.
+  // The simple demo remains in this mode until Main is rebooted.
+  // --------------------------------------------------------
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    if (!directWiFiWasConnected)
+    {
+      directWiFiWasConnected = true;
+      Serial.print("[DIRECT] Connected to F7. Main IP: ");
+      Serial.println(WiFi.localIP());
+      startUdpListener();
+    }
+
+    return;
+  }
+
+  directWiFiWasConnected = false;
+
+  if (udpListenerStarted)
+  {
+    udp.stop();
+    udpListenerStarted = false;
+  }
+
+  if (currentTime - lastDirectWiFiRetry < DIRECT_WIFI_RETRY_MS)
+  {
+    return;
+  }
+
+  lastDirectWiFiRetry = currentTime;
+  Serial.println("[DIRECT] Retrying F7 WiFi...");
+  WiFi.disconnect();
+  delay(50);
+  WiFi.begin(F7_AP_SSID, F7_AP_PASSWORD);
 }
 
 // ============================================================
@@ -864,7 +949,8 @@ void maintainWiFi()
 
 void maintainMQTT()
 {
-  if (WiFi.status() != WL_CONNECTED)
+  // MQTT is available only while Main is connected to Home WiFi.
+  if (directMode || WiFi.status() != WL_CONNECTED)
   {
     return;
   }
@@ -992,6 +1078,32 @@ void publishTelemetry()
   telemetryJson += "\"motion\":\"";
   telemetryJson += levelToText(motionLevel);
   telemetryJson += "\",";
+
+  // These fields let the backend identify and display F7 data
+  // received through the local UDP fallback path.
+  telemetryJson += "\"motionSource\":\"";
+  telemetryJson += motionSource;
+  telemetryJson += "\",";
+
+  telemetryJson += "\"motionRoll\":";
+  telemetryJson += String(motionRoll, 1);
+  telemetryJson += ",";
+
+  telemetryJson += "\"motionPitch\":";
+  telemetryJson += String(motionPitch, 1);
+  telemetryJson += ",";
+
+  telemetryJson += "\"motionTilt\":";
+  telemetryJson += String(motionTilt, 1);
+  telemetryJson += ",";
+
+  telemetryJson += "\"motionVibration\":";
+  telemetryJson += String(motionVibration, 2);
+  telemetryJson += ",";
+
+  telemetryJson += "\"motionImpact\":";
+  telemetryJson += String(motionImpact, 2);
+  telemetryJson += ",";
 
   telemetryJson += "\"system\":\"";
   telemetryJson += levelToText(systemLevel);
@@ -1132,7 +1244,18 @@ void printSystemStatus()
     Serial.println();
   }
 
-  Serial.print("HOME WiFi   : ");
+  Serial.print("NETWORK     : ");
+
+  if (directMode)
+  {
+    Serial.println("F7 DIRECT WIFI + UDP");
+  }
+  else
+  {
+    Serial.println("HOME WIFI + MQTT");
+  }
+
+  Serial.print("WiFi        : ");
   Serial.println(WiFi.status() == WL_CONNECTED ? "CONNECTED" : "DISCONNECTED");
 
   Serial.print("MQTT        : ");
@@ -1140,11 +1263,8 @@ void printSystemStatus()
   Serial.print(" | state=");
   Serial.println(mqttClient.state());
 
-  Serial.print("DIRECT AP   : ");
-  Serial.println(DIRECT_AP_SSID);
-
-  Serial.print("DIRECT IP   : ");
-  Serial.println(WiFi.softAPIP());
+  Serial.print("F7 AP       : ");
+  Serial.println(F7_AP_SSID);
 
   Serial.println("================================");
 }

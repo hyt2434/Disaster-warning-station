@@ -21,7 +21,7 @@ Tài liệu này mô tả đúng dữ liệu đang được firmware, backend v�
 | `disaster/main/command/buzzer` | Backend | ESP32 Main | `ON` / `OFF` | Không |
 | `disaster/main/state/buzzer` | ESP32 Main | Backend | `ON` / `OFF` | Có |
 | `disaster/f7/telemetry` | ESP32 F7 | Backend | JSON | Không |
-| `disaster/f7/state` | ESP32 F7 | ESP32 Main | `SAFE` / `WARNING` / `DANGER` | Có |
+| `disaster/f7/state` | ESP32 F7 | ESP32 Main | `NORMAL` / `WARNING` / `DANGER` | Có |
 | `disaster/f7/status` | ESP32 F7 | Backend | `online` / `offline` | Có |
 | `disaster/backend/status` | Backend | Broker/client khác | JSON online/offline | Có |
 
@@ -43,6 +43,12 @@ Payload hiện tại:
   "distanceCm": 51.4,
   "waterLevelCm": 48.6,
   "motion": "SAFE",
+  "motionSource": "MQTT",
+  "motionRoll": 1.2,
+  "motionPitch": 2.1,
+  "motionTilt": 3.0,
+  "motionVibration": 0.2,
+  "motionImpact": 0.3,
   "system": "DANGER",
   "buzzer": false,
   "buzzerMuted": true
@@ -59,6 +65,10 @@ Payload hiện tại:
 | `distanceCm` | number hoặc null | Khoảng cách từ cảm biến đến mặt nước |
 | `waterLevelCm` | number hoặc null | Mực nước tính từ đáy |
 | `motion` | string | Mức chuyển động do F7 gửi sang |
+| `motionSource` | string | `MQTT`, `DIRECT` hoặc `NONE` |
+| `motionRoll`, `motionPitch` | number | Góc F7 nhận qua UDP local |
+| `motionTilt` | number | Độ lệch nghiêng của F7 |
+| `motionVibration`, `motionImpact` | number | Mức rung và va chạm của F7 |
 | `system` | string | Trạng thái tổng hợp: `SAFE`, `WARNING`, `DANGER` |
 | `buzzer` | boolean | Trạng thái thật của còi |
 | `buzzerMuted` | boolean | Sự kiện cảnh báo hiện tại đã bị tắt tiếng hay chưa |
@@ -198,11 +208,33 @@ F7 tiếp tục dùng payload hiện có. Backend chấp nhận các trường c
   "tilt": 3.0,
   "vibration": 0.2,
   "impact": 0.3,
-  "status": "SAFE"
+  "status": "NORMAL"
 }
 ```
 
 F7 gửi trạng thái cần thiết qua `disaster/f7/state` để ESP32 Main tổng hợp vào trường `motion` và `system`.
+
+Ngoài MQTT, F7 luôn tạo Wi-Fi `DISASTER_F7_DIRECT`. Khi Main mất Wi-Fi nhà, Main kết nối vào mạng này và nghe UDP cổng `4210`. Payload local là một dòng CSV đơn giản:
+
+```text
+STATUS,ROLL,PITCH,TILT,VIBRATION,IMPACT
+```
+
+Ví dụ:
+
+```text
+WARNING,1.2,2.1,12.0,1.35,2.10
+```
+
+Đường UDP chỉ phục vụ cảnh báo local giữa F7 và Main. MQTT vẫn là đường đưa dữ liệu lên backend và website.
+
+Khi backend nhận `disaster/f7/telemetry`, dữ liệu được:
+
+1. lưu vào bảng PostgreSQL `f7_readings`;
+2. giữ làm dữ liệu F7 mới nhất để ghép vào bản ghi `sensor_readings` tiếp theo;
+3. gửi độ rung lên Field 7 của channel ThingSpeak chung tối đa 15 giây/lần; nếu Main offline thì bản ghi Cloud chỉ có Field 7;
+4. dùng Field 5 và Field 7 để dự đoán trạng thái hệ thống sau 5 phút;
+5. cập nhật API `/api/devices/f7/latest` và `/api/devices/f7/readings`.
 
 ## 9. Lưu dữ liệu
 
