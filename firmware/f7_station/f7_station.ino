@@ -1,21 +1,29 @@
 /*
  * ============================================================
- * XIAO ESP32-C3 + MPU6050
- * SIMPLE DEMO + DIRECT FALLBACK TO ESP32-S3
+ * XIAO ESP32-C3 F7 + MPU6050
  * ============================================================
  *
- * NORMAL MODE:
- *   C3 -> Home WiFi -> MQTT -> S3 / Web
+ * NORMAL PATH:
+ *   F7 -> Home WiFi -> MQTT -> Main / Backend / Web
  *
- * WHEN HOME WIFI IS LOST:
- *   C3 -> WiFi AP created by S3 -> UDP -> S3
+ * LOCAL FALLBACK PATH:
+ *   F7 creates WiFi AP -> Main connects to F7 AP -> UDP -> Main
  *
- * No ESP-NOW.
- * No wire between C3 and S3.
+ * The F7 access point is always available. This makes the fallback
+ * easy to test and does not interrupt the normal MQTT connection.
  *
- * IMPORTANT:
- *   After C3 enters DIRECT mode, it stays there until reboot.
- *   This keeps the demo logic simple and stable.
+ * TEST WITHOUT TURNING OFF THE ROUTER:
+ *   1. Set LOCAL_TEST_MODE = true in this file and Main firmware.
+ *   2. Upload this F7 firmware first.
+ *   3. Upload Main firmware.
+ *   4. Open both Serial Monitors at 115200 baud.
+ *
+ * MPU6050 DATA:
+ *   - Tilt: change of roll or pitch compared with startup position.
+ *   - Vibration: average acceleration change in one reading group.
+ *   - Impact: largest acceleration change in one reading group.
+ *
+ * SEND INTERVAL: 2 seconds.
  * ============================================================
  */
 
@@ -28,13 +36,14 @@
 #include <math.h>
 
 // ============================================================
-// 1. HOME WIFI + MQTT
+// 1. NORMAL HOME WIFI + MQTT
 // ============================================================
 
 const char* HOME_WIFI_SSID = "YOUR_WIFI_SSID";
 const char* HOME_WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 
-const char* MQTT_HOST = "192.168.1.100";
+// IP address of the computer running Mosquitto.
+const char* MQTT_HOST = "192.168.1.12";
 const int MQTT_PORT = 1883;
 const char* MQTT_USER = "";
 const char* MQTT_PASSWORD = "";
@@ -46,112 +55,96 @@ const char* TOPIC_TELEMETRY = "disaster/f7/telemetry";
 const char* TOPIC_STATUS = "disaster/f7/status";
 
 // ============================================================
-// 2. DIRECT FALLBACK WIFI CREATED BY S3
+// 2. LOCAL FALLBACK WIFI CREATED BY F7
 // ============================================================
 
-const char* MAIN_AP_SSID = "DISASTER_MAIN_DIRECT";
-const char* MAIN_AP_PASSWORD = "12345678";
+const char* F7_AP_SSID = "DISASTER_F7_DIRECT";
+const char* F7_AP_PASSWORD = "12345678";
 
-// S3 AP uses this fixed IP.
-IPAddress MAIN_AP_IP(192, 168, 4, 1);
+IPAddress F7_AP_IP(192, 168, 7, 1);
+IPAddress F7_AP_GATEWAY(192, 168, 7, 1);
+IPAddress F7_AP_SUBNET(255, 255, 255, 0);
+IPAddress F7_AP_BROADCAST_IP(192, 168, 7, 255);
 
 const int DIRECT_UDP_PORT = 4210;
 
-// If home WiFi is unavailable for 5 seconds,
-// switch to S3's direct WiFi.
-const unsigned long HOME_WIFI_FAILOVER_MS = 5000;
-
-// If WiFi is connected but the MQTT broker is unavailable,
-// use the same direct safety path after 10 seconds.
-const unsigned long MQTT_FAILOVER_MS = 10000;
+// false: normal operation using Home WiFi and MQTT.
+// true : skip Home WiFi and only test F7 AP -> UDP -> Main.
+const bool LOCAL_TEST_MODE = false;
 
 // ============================================================
-// 3. MPU6050 PINS
+// 3. MPU6050 PINS AND THRESHOLDS
 // ============================================================
 
 const int MPU_SDA_PIN = 6;
 const int MPU_SCL_PIN = 7;
 
-// ============================================================
-// 4. LEVELS
-// ============================================================
-
 const int NORMAL = 0;
 const int WARNING = 1;
 const int DANGER = 2;
 
+// A small tilt can appear because of sensor noise or a slightly uneven table.
+// These demo thresholds avoid warning for small changes around the start position.
+const float TILT_WARNING_DEGREES = 15.0;
+const float TILT_DANGER_DEGREES = 30.0;
+
+const float VIBRATION_WARNING = 0.80;
+const float VIBRATION_DANGER = 2.00;
+
+const float IMPACT_DANGER = 8.0;
+
+// Read several samples so that one noisy value cannot decide the whole status.
+const int MOTION_SAMPLE_COUNT = 20;
+const int MINIMUM_VALID_SAMPLES = 10;
+
+// Values outside this range are treated as a disconnected sensor or I2C noise.
+const float MINIMUM_VALID_ACCELERATION = 2.0;
+const float MAXIMUM_VALID_ACCELERATION = 40.0;
+
 // ============================================================
-// 5. DEMO THRESHOLDS
+// 4. TIMING
 // ============================================================
 
-const float TILT_WARNING = 10.0;
-const float TILT_DANGER = 20.0;
-
-const float VIBRATION_WARNING = 1.20;
-const float VIBRATION_DANGER = 2.50;
-
-const float IMPACT_DANGER = 10.0;
+const unsigned long PUBLISH_INTERVAL_MS = 2000;
+const unsigned long MQTT_RETRY_INTERVAL_MS = 5000;
+const unsigned long NETWORK_LOG_INTERVAL_MS = 5000;
 
 // ============================================================
-// 6. OBJECTS
+// 5. OBJECTS AND CURRENT VALUES
 // ============================================================
 
 Adafruit_MPU6050 mpu;
-
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
-
 WiFiUDP udp;
 
-// ============================================================
-// 7. CALIBRATION BASELINE
-// ============================================================
-
-float baselineRoll = 0;
-float baselinePitch = 0;
+float baselineRoll = 0.0;
+float baselinePitch = 0.0;
 float baselineAcceleration = 9.8;
 
-// ============================================================
-// 8. CURRENT SENSOR VALUES
-// ============================================================
-
-float roll = 0;
-float pitch = 0;
-
-float tiltAngle = 0;
-float vibrationValue = 0;
-float impactDelta = 0;
-float accelerationMagnitude = 0;
-
-// ============================================================
-// 9. CURRENT LEVELS
-// ============================================================
+float roll = 0.0;
+float pitch = 0.0;
+float tiltAngle = 0.0;
+float vibrationValue = 0.0;
+float impactDelta = 0.0;
 
 int tiltLevel = NORMAL;
 int vibrationLevel = NORMAL;
 int impactLevel = NORMAL;
-
 int motionLevel = NORMAL;
-int previousMotionLevel = NORMAL;
 
-// ============================================================
-// 10. NETWORK STATE
-// ============================================================
+bool motionSensorValid = false;
+bool calibrationSuccessful = false;
 
-// false = C3 is trying/using home WiFi.
-// true  = C3 is using S3 direct AP.
-bool directMode = false;
-
-unsigned long homeWiFiLostSince = 0;
-unsigned long lastDirectRetry = 0;
+unsigned long lastPublishTime = 0;
 unsigned long lastMQTTRetry = 0;
-unsigned long mqttUnavailableSince = 0;
+unsigned long lastNetworkLog = 0;
 
 bool homeWiFiWasConnected = false;
-bool directWiFiWasConnected = false;
+bool mainWasConnectedToF7 = false;
 
 // ============================================================
-// 11. SIMPLE HELPERS
+// 6. SIMPLE HELPERS
 // ============================================================
 
 const char* levelToText(int level)
@@ -169,207 +162,232 @@ const char* levelToText(int level)
   return "NORMAL";
 }
 
-float calculateRoll(float ax, float ay, float az)
+float calculateRoll(float accelerationX, float accelerationY, float accelerationZ)
 {
-  return atan2(ay, az) * 180.0 / PI;
+  return atan2(accelerationY, accelerationZ) * 180.0 / PI;
 }
 
-float calculatePitch(float ax, float ay, float az)
+float calculatePitch(float accelerationX, float accelerationY, float accelerationZ)
 {
-  float bottom = sqrt(ay * ay + az * az);
+  float bottom = sqrt(
+    accelerationY * accelerationY +
+    accelerationZ * accelerationZ
+  );
 
-  return atan2(-ax, bottom) * 180.0 / PI;
+  return atan2(-accelerationX, bottom) * 180.0 / PI;
 }
 
-float calculateAccelerationMagnitude(float ax, float ay, float az)
+float calculateAccelerationMagnitude(
+  float accelerationX,
+  float accelerationY,
+  float accelerationZ
+)
 {
   return sqrt(
-    ax * ax +
-    ay * ay +
-    az * az
+    accelerationX * accelerationX +
+    accelerationY * accelerationY +
+    accelerationZ * accelerationZ
   );
 }
 
+bool isValidAcceleration(float accelerationMagnitude)
+{
+  return isfinite(accelerationMagnitude) &&
+         accelerationMagnitude >= MINIMUM_VALID_ACCELERATION &&
+         accelerationMagnitude <= MAXIMUM_VALID_ACCELERATION;
+}
+
+float calculateAngleDifference(float currentAngle, float baselineAngle)
+{
+  float difference = fabs(currentAngle - baselineAngle);
+
+  // Roll can jump from +179 degrees to -179 degrees although the real
+  // physical change is only 2 degrees.
+  if (difference > 180.0)
+  {
+    difference = 360.0 - difference;
+  }
+
+  return difference;
+}
+
 // ============================================================
-// 12. CALIBRATION
+// 7. CALIBRATE MPU6050
 // ============================================================
 
 void calibrateMPU()
 {
-  Serial.println();
-  Serial.println("================================");
-  Serial.println("[MPU] CALIBRATION START");
-  Serial.println("[MPU] Keep the sensor still for about 2 seconds.");
-
   const int SAMPLE_COUNT = 100;
+  const int MAXIMUM_ATTEMPTS = 200;
 
-  float totalRoll = 0;
-  float totalPitch = 0;
-  float totalAcceleration = 0;
+  float totalRoll = 0.0;
+  float totalPitch = 0.0;
+  float totalAcceleration = 0.0;
+  int validSampleCount = 0;
+  int attemptCount = 0;
 
-  for (int i = 0; i < SAMPLE_COUNT; i++)
+  Serial.println();
+  Serial.println("[MPU] Calibration starts. Keep F7 still for 2 seconds.");
+
+  while (validSampleCount < SAMPLE_COUNT && attemptCount < MAXIMUM_ATTEMPTS)
   {
+    attemptCount++;
+
     sensors_event_t acceleration;
     sensors_event_t gyro;
-    sensors_event_t temperature;
+    sensors_event_t sensorTemperature;
 
-    mpu.getEvent(
-      &acceleration,
-      &gyro,
-      &temperature
+    mpu.getEvent(&acceleration, &gyro, &sensorTemperature);
+
+    float accelerationX = acceleration.acceleration.x;
+    float accelerationY = acceleration.acceleration.y;
+    float accelerationZ = acceleration.acceleration.z;
+
+    float accelerationMagnitude = calculateAccelerationMagnitude(
+      accelerationX,
+      accelerationY,
+      accelerationZ
     );
 
-    float ax = acceleration.acceleration.x;
-    float ay = acceleration.acceleration.y;
-    float az = acceleration.acceleration.z;
-
-    totalRoll += calculateRoll(ax, ay, az);
-    totalPitch += calculatePitch(ax, ay, az);
-    totalAcceleration +=
-      calculateAccelerationMagnitude(ax, ay, az);
-
-    delay(20);
-  }
-
-  baselineRoll =
-    totalRoll / SAMPLE_COUNT;
-
-  baselinePitch =
-    totalPitch / SAMPLE_COUNT;
-
-  baselineAcceleration =
-    totalAcceleration / SAMPLE_COUNT;
-
-  Serial.println("[MPU] CALIBRATION COMPLETE");
-
-  Serial.print("Baseline Roll         : ");
-  Serial.println(baselineRoll);
-
-  Serial.print("Baseline Pitch        : ");
-  Serial.println(baselinePitch);
-
-  Serial.print("Baseline Acceleration : ");
-  Serial.println(baselineAcceleration);
-
-  Serial.println("================================");
-}
-
-// ============================================================
-// 13. READ MOTION SENSOR
-// ============================================================
-
-void readMotionSensor()
-{
-  /*
-   * Read 5 samples.
-   *
-   * VIBRATION:
-   *   average change from baseline.
-   *
-   * IMPACT:
-   *   biggest change from baseline.
-   */
-
-  const int SAMPLE_COUNT = 5;
-
-  float totalRoll = 0;
-  float totalPitch = 0;
-  float totalAcceleration = 0;
-  float totalVibration = 0;
-
-  float biggestImpact = 0;
-
-  for (int i = 0; i < SAMPLE_COUNT; i++)
-  {
-    sensors_event_t acceleration;
-    sensors_event_t gyro;
-    sensors_event_t temperature;
-
-    mpu.getEvent(
-      &acceleration,
-      &gyro,
-      &temperature
-    );
-
-    float ax = acceleration.acceleration.x;
-    float ay = acceleration.acceleration.y;
-    float az = acceleration.acceleration.z;
-
-    float currentRoll =
-      calculateRoll(ax, ay, az);
-
-    float currentPitch =
-      calculatePitch(ax, ay, az);
-
-    float currentAcceleration =
-      calculateAccelerationMagnitude(
-        ax,
-        ay,
-        az
-      );
-
-    float difference =
-      fabs(
-        currentAcceleration -
-        baselineAcceleration
-      );
-
-    totalRoll += currentRoll;
-    totalPitch += currentPitch;
-    totalAcceleration += currentAcceleration;
-    totalVibration += difference;
-
-    if (difference > biggestImpact)
+    if (isValidAcceleration(accelerationMagnitude))
     {
-      biggestImpact = difference;
+      totalRoll += calculateRoll(accelerationX, accelerationY, accelerationZ);
+      totalPitch += calculatePitch(accelerationX, accelerationY, accelerationZ);
+      totalAcceleration += accelerationMagnitude;
+      validSampleCount++;
     }
 
     delay(20);
   }
 
-  roll =
-    totalRoll / SAMPLE_COUNT;
-
-  pitch =
-    totalPitch / SAMPLE_COUNT;
-
-  accelerationMagnitude =
-    totalAcceleration / SAMPLE_COUNT;
-
-  vibrationValue =
-    totalVibration / SAMPLE_COUNT;
-
-  impactDelta =
-    biggestImpact;
-
-  float rollDifference =
-    fabs(roll - baselineRoll);
-
-  float pitchDifference =
-    fabs(pitch - baselinePitch);
-
-  if (rollDifference > pitchDifference)
+  if (validSampleCount < MINIMUM_VALID_SAMPLES)
   {
-    tiltAngle = rollDifference;
+    Serial.println("[MPU] Calibration failed: too many invalid samples");
+    Serial.println("[MPU] Check 3.3V, GND, SDA and SCL wiring");
+    return;
   }
-  else
-  {
-    tiltAngle = pitchDifference;
-  }
+
+  baselineRoll = totalRoll / validSampleCount;
+  baselinePitch = totalPitch / validSampleCount;
+  baselineAcceleration = totalAcceleration / validSampleCount;
+  calibrationSuccessful = true;
+
+  Serial.println("[MPU] Calibration completed");
+  Serial.print("[MPU] Baseline roll: ");
+  Serial.println(baselineRoll);
+  Serial.print("[MPU] Baseline pitch: ");
+  Serial.println(baselinePitch);
+  Serial.print("[MPU] Baseline acceleration: ");
+  Serial.println(baselineAcceleration);
 }
 
 // ============================================================
-// 14. CLASSIFY MOTION
+// 8. READ AND CLASSIFY MOTION
 // ============================================================
 
-int checkTiltLevel()
+void readMotionSensor()
 {
-  if (tiltAngle >= TILT_DANGER)
+  float totalRoll = 0.0;
+  float totalPitch = 0.0;
+  float totalAcceleration = 0.0;
+  float accelerationSamples[MOTION_SAMPLE_COUNT];
+
+  int validSampleCount = 0;
+  int attemptCount = 0;
+  const int MAXIMUM_ATTEMPTS = MOTION_SAMPLE_COUNT * 2;
+
+  while (
+    validSampleCount < MOTION_SAMPLE_COUNT &&
+    attemptCount < MAXIMUM_ATTEMPTS
+  )
+  {
+    attemptCount++;
+
+    sensors_event_t acceleration;
+    sensors_event_t gyro;
+    sensors_event_t sensorTemperature;
+
+    mpu.getEvent(&acceleration, &gyro, &sensorTemperature);
+
+    float accelerationX = acceleration.acceleration.x;
+    float accelerationY = acceleration.acceleration.y;
+    float accelerationZ = acceleration.acceleration.z;
+
+    float currentAcceleration = calculateAccelerationMagnitude(
+      accelerationX,
+      accelerationY,
+      accelerationZ
+    );
+
+    if (isValidAcceleration(currentAcceleration))
+    {
+      totalRoll += calculateRoll(accelerationX, accelerationY, accelerationZ);
+      totalPitch += calculatePitch(accelerationX, accelerationY, accelerationZ);
+      totalAcceleration += currentAcceleration;
+      accelerationSamples[validSampleCount] = currentAcceleration;
+      validSampleCount++;
+    }
+
+    delay(10);
+  }
+
+  if (validSampleCount < MINIMUM_VALID_SAMPLES)
+  {
+    motionSensorValid = false;
+    vibrationValue = 0.0;
+    impactDelta = 0.0;
+    Serial.println("[MPU] Reading ignored: too many invalid acceleration samples");
+    return;
+  }
+
+  motionSensorValid = calibrationSuccessful;
+  roll = totalRoll / validSampleCount;
+  pitch = totalPitch / validSampleCount;
+
+  float averageAcceleration = totalAcceleration / validSampleCount;
+  float totalAccelerationChange = 0.0;
+  float largestChange = 0.0;
+  float secondLargestChange = 0.0;
+
+  for (int sample = 0; sample < validSampleCount; sample++)
+  {
+    float accelerationChange = fabs(
+      accelerationSamples[sample] - averageAcceleration
+    );
+
+    totalAccelerationChange += accelerationChange;
+
+    if (accelerationChange > largestChange)
+    {
+      secondLargestChange = largestChange;
+      largestChange = accelerationChange;
+    }
+    else if (accelerationChange > secondLargestChange)
+    {
+      secondLargestChange = accelerationChange;
+    }
+  }
+
+  vibrationValue = totalAccelerationChange / validSampleCount;
+
+  // Use the second-largest change. One isolated noisy sample is ignored,
+  // while a real impact normally affects at least two consecutive samples.
+  impactDelta = secondLargestChange;
+
+  float rollDifference = calculateAngleDifference(roll, baselineRoll);
+  float pitchDifference = calculateAngleDifference(pitch, baselinePitch);
+
+  tiltAngle = max(rollDifference, pitchDifference);
+}
+
+int getTiltLevel()
+{
+  if (tiltAngle >= TILT_DANGER_DEGREES)
   {
     return DANGER;
   }
 
-  if (tiltAngle >= TILT_WARNING)
+  if (tiltAngle >= TILT_WARNING_DEGREES)
   {
     return WARNING;
   }
@@ -377,7 +395,7 @@ int checkTiltLevel()
   return NORMAL;
 }
 
-int checkVibrationLevel()
+int getVibrationLevel()
 {
   if (vibrationValue >= VIBRATION_DANGER)
   {
@@ -392,7 +410,7 @@ int checkVibrationLevel()
   return NORMAL;
 }
 
-int checkImpactLevel()
+int getImpactLevel()
 {
   if (impactDelta >= IMPACT_DANGER)
   {
@@ -404,16 +422,19 @@ int checkImpactLevel()
 
 void updateMotionLevel()
 {
-  tiltLevel =
-    checkTiltLevel();
+  if (!motionSensorValid)
+  {
+    tiltLevel = NORMAL;
+    vibrationLevel = NORMAL;
+    impactLevel = NORMAL;
+    motionLevel = NORMAL;
+    return;
+  }
 
-  vibrationLevel =
-    checkVibrationLevel();
+  tiltLevel = getTiltLevel();
+  vibrationLevel = getVibrationLevel();
+  impactLevel = getImpactLevel();
 
-  impactLevel =
-    checkImpactLevel();
-
-  // Take the highest level.
   motionLevel = tiltLevel;
 
   if (vibrationLevel > motionLevel)
@@ -428,235 +449,101 @@ void updateMotionLevel()
 }
 
 // ============================================================
-// 15. START HOME WIFI
+// 9. START WIFI
 // ============================================================
 
-void startHomeWiFi()
+void startWiFi()
 {
-  directMode = false;
-
-  WiFi.mode(WIFI_STA);
+  WiFi.mode(WIFI_AP_STA);
   WiFi.persistent(false);
+  WiFi.setSleep(false);
   WiFi.setAutoReconnect(true);
 
-  WiFi.begin(
-    HOME_WIFI_SSID,
-    HOME_WIFI_PASSWORD
-  );
+  WiFi.softAPConfig(F7_AP_IP, F7_AP_GATEWAY, F7_AP_SUBNET);
 
-  homeWiFiLostSince =
-    millis();
+  bool accessPointStarted = WiFi.softAP(F7_AP_SSID, F7_AP_PASSWORD);
 
-  Serial.print("[WiFi] Connecting to HOME WiFi: ");
-  Serial.println(HOME_WIFI_SSID);
-}
-
-// ============================================================
-// 16. SWITCH TO S3 DIRECT WIFI
-// ============================================================
-
-void switchToDirectMode()
-{
-  Serial.println();
-  Serial.println("[WiFi] Home WiFi unavailable.");
-  Serial.println("[WiFi] SWITCH TO DIRECT MODE.");
-  Serial.print("[WiFi] Connecting directly to S3 AP: ");
-  Serial.println(MAIN_AP_SSID);
-
-  directMode = true;
-
-  // Announce the mode change before stopping MQTT.
-  if (mqttClient.connected())
+  if (accessPointStarted)
   {
-    mqttClient.publish(
-      TOPIC_STATUS,
-      "direct",
-      true
-    );
+    Serial.println("[DIRECT] F7 fallback WiFi started");
+    Serial.print("[DIRECT] SSID: ");
+    Serial.println(F7_AP_SSID);
+    Serial.print("[DIRECT] IP: ");
+    Serial.println(WiFi.softAPIP());
+  }
+  else
+  {
+    Serial.println("[DIRECT] Failed to start F7 fallback WiFi");
   }
 
-  // Stop old MQTT connection.
-  mqttClient.disconnect();
+  if (LOCAL_TEST_MODE)
+  {
+    Serial.println("[TEST] LOCAL_TEST_MODE is ON. Home WiFi and MQTT are skipped.");
+    return;
+  }
 
-  // Clear old WiFi connection.
-  WiFi.disconnect();
-
-  delay(100);
-
-  WiFi.begin(
-    MAIN_AP_SSID,
-    MAIN_AP_PASSWORD
-  );
-
-  lastDirectRetry =
-    millis();
+  Serial.print("[WiFi] Connecting to HOME: ");
+  Serial.println(HOME_WIFI_SSID);
+  WiFi.begin(HOME_WIFI_SSID, HOME_WIFI_PASSWORD);
 }
-
-// ============================================================
-// 17. MAINTAIN WIFI
-// ============================================================
 
 void maintainWiFi()
 {
-  unsigned long now =
-    millis();
+  bool homeConnected = WiFi.status() == WL_CONNECTED;
+  bool mainConnected = WiFi.softAPgetStationNum() > 0;
 
-  // --------------------------------------------------------
-  // HOME MODE
-  // --------------------------------------------------------
-
-  if (!directMode)
+  if (homeConnected && !homeWiFiWasConnected)
   {
-    // Home WiFi is OK.
-    if (WiFi.status() == WL_CONNECTED)
-    {
-      if (!homeWiFiWasConnected)
-      {
-        homeWiFiWasConnected = true;
-
-        Serial.print("[WiFi] HOME connected. IP: ");
-        Serial.println(WiFi.localIP());
-
-        Serial.print("[WiFi] RSSI: ");
-        Serial.println(WiFi.RSSI());
-
-        Serial.print("[MQTT] Broker: ");
-        Serial.print(MQTT_HOST);
-        Serial.print(":");
-        Serial.println(MQTT_PORT);
-      }
-
-      homeWiFiLostSince = 0;
-
-      return;
-    }
-
-    // Start measuring how long WiFi has been unavailable.
-    if (homeWiFiLostSince == 0)
-    {
-      homeWiFiLostSince = now;
-    }
-
-    // Wait 5 seconds before fallback.
-    if (
-      now - homeWiFiLostSince >=
-      HOME_WIFI_FAILOVER_MS
-    )
-    {
-      switchToDirectMode();
-    }
-
-    return;
+    homeWiFiWasConnected = true;
+    Serial.print("[WiFi] HOME connected. IP: ");
+    Serial.println(WiFi.localIP());
   }
 
-  // --------------------------------------------------------
-  // DIRECT MODE
-  // --------------------------------------------------------
-
-  // Connected to S3 AP.
-  if (WiFi.status() == WL_CONNECTED)
+  if (!homeConnected && homeWiFiWasConnected)
   {
-    if (!directWiFiWasConnected)
-    {
-      directWiFiWasConnected = true;
-
-      Serial.print("[DIRECT] Connected. IP: ");
-      Serial.println(WiFi.localIP());
-    }
-
-    return;
+    homeWiFiWasConnected = false;
+    mqttClient.disconnect();
+    Serial.println("[WiFi] HOME lost. F7 fallback WiFi is still available.");
   }
 
-  directWiFiWasConnected = false;
-
-  // Retry S3 AP every 5 seconds.
-  if (
-    now - lastDirectRetry <
-    5000
-  )
+  if (mainConnected != mainWasConnectedToF7)
   {
-    return;
+    mainWasConnectedToF7 = mainConnected;
+    Serial.print("[DIRECT] Main connected to F7 WiFi: ");
+    Serial.println(mainConnected ? "YES" : "NO");
   }
 
-  lastDirectRetry = now;
-
-  Serial.println(
-    "[DIRECT] Retry S3 AP..."
-  );
-
-  WiFi.disconnect();
-
-  delay(50);
-
-  WiFi.begin(
-    MAIN_AP_SSID,
-    MAIN_AP_PASSWORD
-  );
+  if (!homeConnected && millis() - lastNetworkLog >= NETWORK_LOG_INTERVAL_MS)
+  {
+    lastNetworkLog = millis();
+    Serial.println("[WiFi] HOME unavailable. Waiting for Main on F7 fallback WiFi.");
+  }
 }
 
 // ============================================================
-// 18. MQTT FOR NORMAL MODE
+// 10. MQTT NORMAL PATH
 // ============================================================
 
 void maintainMQTT()
 {
-  // MQTT is used only in HOME mode.
-  if (directMode)
-  {
-    return;
-  }
-
-  if (
-    WiFi.status() !=
-    WL_CONNECTED
-  )
+  if (LOCAL_TEST_MODE || WiFi.status() != WL_CONNECTED)
   {
     return;
   }
 
   if (mqttClient.connected())
   {
-    mqttUnavailableSince = 0;
     return;
   }
 
-  unsigned long now =
-    millis();
-
-  if (mqttUnavailableSince == 0)
-  {
-    mqttUnavailableSince = now;
-  }
-
-  if (
-    now - mqttUnavailableSince >=
-    MQTT_FAILOVER_MS
-  )
-  {
-    Serial.println(
-      "[MQTT] Broker unavailable. Using direct safety path."
-    );
-
-    switchToDirectMode();
-    return;
-  }
-
-  if (
-    now - lastMQTTRetry <
-    5000
-  )
+  if (millis() - lastMQTTRetry < MQTT_RETRY_INTERVAL_MS)
   {
     return;
   }
 
-  lastMQTTRetry = now;
-
-  Serial.println(
-    "[MQTT] Connecting..."
-  );
+  lastMQTTRetry = millis();
 
   char clientId[48];
-
   snprintf(
     clientId,
     sizeof(clientId),
@@ -665,11 +552,11 @@ void maintainMQTT()
     (uint16_t)(ESP.getEfuseMac() & 0xFFFF)
   );
 
-  bool success;
+  bool connected;
 
   if (strlen(MQTT_USER) > 0)
   {
-    success = mqttClient.connect(
+    connected = mqttClient.connect(
       clientId,
       MQTT_USER,
       MQTT_PASSWORD,
@@ -681,7 +568,7 @@ void maintainMQTT()
   }
   else
   {
-    success = mqttClient.connect(
+    connected = mqttClient.connect(
       clientId,
       TOPIC_STATUS,
       1,
@@ -690,46 +577,24 @@ void maintainMQTT()
     );
   }
 
-  if (success)
+  if (connected)
   {
-    mqttUnavailableSince = 0;
-
-    Serial.println(
-      "[MQTT] Connected"
-    );
-
-    mqttClient.publish(
-      TOPIC_STATUS,
-      "online",
-      true
-    );
+    mqttClient.publish(TOPIC_STATUS, "online", true);
+    Serial.println("[MQTT] Connected");
   }
   else
   {
-    Serial.println(
-      "[MQTT] Connection failed"
-    );
+    Serial.print("[MQTT] Connection failed. State: ");
+    Serial.println(mqttClient.state());
   }
 }
 
-// ============================================================
-// 19. SEND DATA THROUGH MQTT
-// ============================================================
-
 void publishMQTTData()
 {
-  if (
-    directMode ||
-    !mqttClient.connected()
-  )
+  if (!mqttClient.connected())
   {
     return;
   }
-
-  // --------------------------------------------------------
-  // Simple state topic.
-  // S3 subscribes to this topic.
-  // --------------------------------------------------------
 
   mqttClient.publish(
     TOPIC_MOTION_STATE,
@@ -737,326 +602,195 @@ void publishMQTTData()
     true
   );
 
-  // --------------------------------------------------------
-  // Telemetry for web/dashboard.
-  // --------------------------------------------------------
+  String telemetryJson = "{";
 
-  String data = "{";
+  telemetryJson += "\"deviceId\":\"";
+  telemetryJson += DEVICE_ID;
+  telemetryJson += "\",";
 
-  data += "\"deviceId\":\"";
-  data += DEVICE_ID;
-  data += "\",";
+  telemetryJson += "\"roll\":";
+  telemetryJson += String(roll, 1);
+  telemetryJson += ",";
 
-  data += "\"roll\":";
-  data += String(roll, 1);
-  data += ",";
+  telemetryJson += "\"pitch\":";
+  telemetryJson += String(pitch, 1);
+  telemetryJson += ",";
 
-  data += "\"pitch\":";
-  data += String(pitch, 1);
-  data += ",";
+  telemetryJson += "\"tilt\":";
+  telemetryJson += String(tiltAngle, 1);
+  telemetryJson += ",";
 
-  data += "\"tilt\":";
-  data += String(tiltAngle, 1);
-  data += ",";
+  telemetryJson += "\"vibration\":";
+  telemetryJson += String(vibrationValue, 2);
+  telemetryJson += ",";
 
-  data += "\"vibration\":";
-  data += String(vibrationValue, 2);
-  data += ",";
+  telemetryJson += "\"impact\":";
+  telemetryJson += String(impactDelta, 2);
+  telemetryJson += ",";
 
-  data += "\"impact\":";
-  data += String(impactDelta, 2);
-  data += ",";
+  telemetryJson += "\"status\":\"";
+  telemetryJson += levelToText(motionLevel);
+  telemetryJson += "\"";
 
-  data += "\"status\":\"";
-  data += levelToText(motionLevel);
-  data += "\"";
+  telemetryJson += "}";
 
-  data += "}";
+  mqttClient.publish(TOPIC_TELEMETRY, telemetryJson.c_str());
 
-  mqttClient.publish(
-    TOPIC_TELEMETRY,
-    data.c_str()
-  );
+  Serial.print("[MQTT] Published: ");
+  Serial.println(telemetryJson);
 }
 
 // ============================================================
-// 20. SEND DATA DIRECTLY TO S3 WITH UDP
+// 11. UDP LOCAL FALLBACK PATH
 // ============================================================
 
-void sendDirectToS3()
+void sendDirectDataToMain()
 {
-  if (!directMode)
-  {
-    return;
-  }
-
-  if (
-    WiFi.status() !=
-    WL_CONNECTED
-  )
+  if (WiFi.softAPgetStationNum() == 0)
   {
     return;
   }
 
   /*
    * Packet format:
-   *
-   * STATUS,TILT,VIBRATION,IMPACT
+   * STATUS,ROLL,PITCH,TILT,VIBRATION,IMPACT
    *
    * Example:
-   *
-   * DANGER,25.4,3.10,4.50
+   * WARNING,1.2,2.5,12.4,1.35,2.10
    */
-
   String packet = "";
 
-  packet +=
-    levelToText(motionLevel);
-
+  packet += levelToText(motionLevel);
   packet += ",";
-
-  packet +=
-    String(tiltAngle, 1);
-
+  packet += String(roll, 1);
   packet += ",";
-
-  packet +=
-    String(vibrationValue, 2);
-
+  packet += String(pitch, 1);
   packet += ",";
+  packet += String(tiltAngle, 1);
+  packet += ",";
+  packet += String(vibrationValue, 2);
+  packet += ",";
+  packet += String(impactDelta, 2);
 
-  packet +=
-    String(impactDelta, 2);
-
-  udp.beginPacket(
-    MAIN_AP_IP,
-    DIRECT_UDP_PORT
-  );
-
+  udp.beginPacket(F7_AP_BROADCAST_IP, DIRECT_UDP_PORT);
   udp.print(packet);
-
   udp.endPacket();
 
-  Serial.print(
-    "[DIRECT] Sent to S3: "
-  );
-
+  Serial.print("[DIRECT] Sent to Main: ");
   Serial.println(packet);
 }
 
 // ============================================================
-// 21. PRINT DATA
+// 12. SERIAL MONITOR
 // ============================================================
 
 void printMotionData()
 {
   Serial.println();
-  Serial.println(
-    "================================"
-  );
+  Serial.println("================================");
 
-  Serial.print("Tilt       : ");
+  Serial.print("Roll        : ");
+  Serial.print(roll);
+  Serial.println(" deg");
+
+  Serial.print("Pitch       : ");
+  Serial.print(pitch);
+  Serial.println(" deg");
+
+  Serial.print("Tilt change : ");
   Serial.print(tiltAngle);
   Serial.print(" deg -> ");
-  Serial.println(
-    levelToText(tiltLevel)
-  );
+  Serial.println(levelToText(tiltLevel));
 
-  Serial.print("Vibration  : ");
+  Serial.print("Vibration   : ");
   Serial.print(vibrationValue);
   Serial.print(" m/s2 -> ");
-  Serial.println(
-    levelToText(vibrationLevel)
-  );
+  Serial.println(levelToText(vibrationLevel));
 
-  Serial.print("Impact     : ");
+  Serial.print("Impact      : ");
   Serial.print(impactDelta);
   Serial.print(" m/s2 -> ");
-  Serial.println(
-    levelToText(impactLevel)
-  );
+  Serial.println(levelToText(impactLevel));
 
-  Serial.print("MOTION     : ");
-  Serial.println(
-    levelToText(motionLevel)
-  );
+  Serial.print("MOTION      : ");
+  Serial.println(levelToText(motionLevel));
 
-  Serial.print("NETWORK    : ");
+  Serial.print("MPU DATA    : ");
+  Serial.println(motionSensorValid ? "VALID" : "INVALID");
 
-  if (directMode)
-  {
-    Serial.println(
-      "DIRECT TO S3"
-    );
-  }
-  else
-  {
-    Serial.println(
-      "HOME WIFI + MQTT"
-    );
-  }
+  Serial.print("HOME MQTT   : ");
+  Serial.println(mqttClient.connected() ? "CONNECTED" : "DISCONNECTED");
 
-  Serial.print("WiFi       : ");
+  Serial.print("MAIN DIRECT : ");
+  Serial.println(WiFi.softAPgetStationNum() > 0 ? "CONNECTED" : "NOT CONNECTED");
 
-  if (
-    WiFi.status() ==
-    WL_CONNECTED
-  )
-  {
-    Serial.print("CONNECTED to ");
-    Serial.println(WiFi.SSID());
-  }
-  else
-  {
-    Serial.println("DISCONNECTED");
-  }
-
-  Serial.println(
-    "================================"
-  );
+  Serial.println("================================");
 }
 
 // ============================================================
-// 22. SETUP
+// 13. SETUP AND LOOP
 // ============================================================
 
 void setup()
 {
-  Serial.begin(9600);
+  Serial.begin(115200);
+  delay(1000);
 
-  // --------------------------------------------------------
-  // MPU6050
-  // --------------------------------------------------------
+  Wire.begin(MPU_SDA_PIN, MPU_SCL_PIN);
 
-  Wire.begin(
-    MPU_SDA_PIN,
-    MPU_SCL_PIN
-  );
-
-  Serial.println(
-    "[MPU] Looking for MPU6050..."
-  );
+  Serial.println("[MPU] Looking for MPU6050...");
 
   while (!mpu.begin())
   {
-    Serial.println(
-      "[MPU] MPU6050 NOT FOUND"
-    );
-
-    Serial.println(
-      "[MPU] Check SDA / SCL / power"
-    );
-
+    Serial.println("[MPU] Not found. Check SDA, SCL and power.");
     delay(1000);
   }
 
-  Serial.println(
-    "[MPU] MPU6050 FOUND"
-  );
+  Serial.println("[MPU] Found");
 
-  mpu.setAccelerometerRange(
-    MPU6050_RANGE_8_G
-  );
+  mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
+  mpu.setGyroRange(MPU6050_RANGE_500_DEG);
+  mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
 
-  mpu.setGyroRange(
-    MPU6050_RANGE_500_DEG
-  );
-
-  mpu.setFilterBandwidth(
-    MPU6050_BAND_21_HZ
-  );
-
-  // Keep the node still here.
   calibrateMPU();
 
-  // --------------------------------------------------------
-  // MQTT
-  // --------------------------------------------------------
-
-  mqttClient.setServer(
-    MQTT_HOST,
-    MQTT_PORT
-  );
-
+  mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setSocketTimeout(1);
 
-  // --------------------------------------------------------
-  // WIFI
-  // --------------------------------------------------------
-
-  startHomeWiFi();
+  startWiFi();
 
   Serial.println();
-  Serial.println(
-    "[F7] Motion node started."
-  );
+  Serial.println("[F7] Motion station started");
+  Serial.println("[F7] Publish interval: 2 seconds");
 }
-
-// ============================================================
-// 23. LOOP
-// ============================================================
 
 void loop()
 {
-  /*
-   * 1. Maintain network.
-   *
-   * HOME WiFi works:
-   *     use MQTT.
-   *
-   * HOME WiFi lost:
-   *     switch to S3 direct AP.
-   */
-
   maintainWiFi();
-
   maintainMQTT();
 
-  if (
-    !directMode &&
-    mqttClient.connected()
-  )
+  if (mqttClient.connected())
   {
     mqttClient.loop();
   }
 
-  /*
-   * 2. Read MPU6050.
-   */
+  unsigned long currentTime = millis();
 
-  readMotionSensor();
-
-  /*
-   * 3. NORMAL / WARNING / DANGER.
-   */
-
-  updateMotionLevel();
-
-  /*
-   * 4. Send data.
-   *
-   * HOME mode  -> MQTT
-   * DIRECT mode -> UDP directly to S3
-   */
-
-  if (directMode)
+  if (currentTime - lastPublishTime >= PUBLISH_INTERVAL_MS)
   {
-    sendDirectToS3();
-  }
-  else
-  {
+    lastPublishTime = currentTime;
+
+    readMotionSensor();
+    updateMotionLevel();
+
+    // Normal path for Main, backend and web.
     publishMQTTData();
+
+    // Local safety path when Main is connected to the F7 access point.
+    sendDirectDataToMain();
+
+    printMotionData();
   }
 
-  /*
-   * 5. Print for demo.
-   */
-
-  printMotionData();
-
-  /*
-   * About 2 updates / second.
-   */
-
-  delay(500);
+  delay(10);
 }

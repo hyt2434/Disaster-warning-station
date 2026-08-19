@@ -120,7 +120,8 @@ export function PredictionPanel({ cloudPrediction, predictionError }) {
           <p className="prediction-explanation">
             Backend lấy dữ liệu lịch sử ThingSpeak, ước lượng giá trị sau 5 phút và đưa
             nhiệt độ, độ ẩm, gas, mực nước vào model được tạo bởi thư mục ai.
-            Trạng thái rung/nghiêng được kiểm tra riêng vì model môi trường không có cảm biến này.
+            Field 5 thể hiện trạng thái chuyển động F7 và Field 7 thể hiện độ rung F7.
+            Hai dữ liệu này cũng được kiểm tra trước khi tạo kết quả chung của toàn hệ thống.
           </p>
         </>
       )}

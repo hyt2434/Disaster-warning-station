@@ -22,7 +22,7 @@ React local → FastAPI REST API → PostgreSQL
 - PostgreSQL lưu thiết bị và lịch sử dữ liệu từ REST API lẫn MQTT.
 - MQTT nhận telemetry từ ESP32.
 - ThingSpeak lưu dữ liệu Cloud và cung cấp lịch sử để retrain AI.
-- Frontend lấy lịch sử ThingSpeak về và hiển thị biểu đồ Field 1–6 tại F4.
+- Frontend lấy lịch sử ThingSpeak về và hiển thị biểu đồ Field 1–7 tại F4.
 - Pushsafer gửi thông báo khi Main hoặc F7 chuyển sang `WARNING`/`DANGER`.
 
 Đây là đồ án demo local, chưa có cấu hình triển khai production.
@@ -123,6 +123,6 @@ npm run build
 - Pushsafer đã được tích hợp; cần điền Private Key và Device ID trong `.env`.
 - Topic MQTT của firmware và backend đã được đồng bộ về root `disaster/`.
 - Telemetry MQTT từ Main được lưu vào PostgreSQL, gửi lên ThingSpeak và đi qua AI.
-- ThingSpeak dùng Field 1–6 cho nhiệt độ, độ ẩm, gas, nước, motion và system.
+- Một channel ThingSpeak dùng Field 1–6 cho nhiệt độ, độ ẩm, gas, nước, motion và system; Field 7 lưu độ rung F7.
 - Model `*.pkl` được tạo local và bị Git ignore; AI tạm bỏ qua dự đoán nếu chưa có model runtime.
 - ThingSpeak API key được đọc từ `.env`, không lưu trong source được commit.

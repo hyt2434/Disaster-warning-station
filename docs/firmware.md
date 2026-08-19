@@ -322,22 +322,14 @@ disaster/main/status
 ```text
 MPU6050
   |
-  +--> ax ay az
-  +--> gx gy gz
-        |
-        v
-   50 Hz sampling
-        |
-        +--> Tilt
-        +--> Vibration RMS
-        +--> Impact
-                |
-                v
-       NORMAL/WARNING/DANGER
-                |
-                +--> MQTT telemetry
-                +--> MQTT alert
+  +--> đọc nhóm 20 mẫu mỗi 2 giây
+  +--> tính roll, pitch, tilt, vibration, impact
+  +--> lấy mức cao nhất: NORMAL / WARNING / DANGER
+  +--> MQTT -> Main, backend và web
+  +--> UDP local -> Main khi Main kết nối Wi-Fi của F7
 ```
+
+F7 luôn tạo access point `DISASTER_F7_DIRECT`. Bình thường F7 vẫn dùng Home Wi-Fi và MQTT. Nếu Main mất Home Wi-Fi, Main kết nối vào access point của F7 để tiếp tục nhận cảnh báo chuyển động cục bộ.
 
 ## 13. Pin MPU6050
 
@@ -361,8 +353,7 @@ Khi MPU6050 khởi động:
 5. firmware tính:
    - baseline roll;
    - baseline pitch;
-   - baseline acceleration magnitude;
-   - gyro bias.
+   - baseline acceleration magnitude.
 
 Nhờ vậy, node có thể được lắp ở một orientation không hoàn toàn bằng phẳng mà vẫn đo độ nghiêng **so với tư thế ban đầu**.
 
@@ -381,10 +372,11 @@ Firmware so sánh `roll/pitch` hiện tại với baseline và lấy độ lệc
 
 Ngưỡng mặc định:
 
-| State | Enter | Exit |
-|---|---:|---:|
-| WARNING | 10 deg | 8 deg |
-| DANGER | 20 deg | 15 deg |
+| State | Điều kiện |
+|---|---:|
+| NORMAL | nhỏ hơn 15 deg |
+| WARNING | từ 15 deg |
+| DANGER | từ 30 deg |
 
 Đây là ngưỡng khởi đầu, không phải giá trị đã kiểm định.
 
@@ -392,7 +384,7 @@ Ngưỡng mặc định:
 
 ## 16. Vibration
 
-Firmware không dùng một raw sample đơn lẻ.
+Firmware không dùng một raw sample đơn lẻ mà phân tích 20 mẫu liên tiếp.
 
 ```text
 A = sqrt(ax^2 + ay^2 + az^2)
@@ -401,18 +393,19 @@ A = sqrt(ax^2 + ay^2 + az^2)
 A - baselineA
         |
         v
-RMS window 25 samples (~0.5 s)
+Độ lệch trung bình của 20 samples
         |
         v
-vibrationRms
+vibration
 ```
 
 Ngưỡng mặc định:
 
-| State | Enter | Exit |
-|---|---:|---:|
-| WARNING | 1.20 m/s^2 | 0.80 m/s^2 |
-| DANGER | 2.50 m/s^2 | 1.80 m/s^2 |
+| State | Điều kiện |
+|---|---:|
+| NORMAL | nhỏ hơn 0.80 m/s^2 |
+| WARNING | từ 0.80 m/s^2 |
+| DANGER | từ 2.00 m/s^2 |
 
 Cần thu dữ liệu thực tế ở trạng thái:
 
@@ -436,10 +429,10 @@ impactDelta = abs(accelerationMagnitude - baselineAccelerationMagnitude)
 Nếu:
 
 ```text
-impactDelta >= 10 m/s^2
+impactDelta >= 8 m/s^2
 ```
 
-thì tạo event `IMPACT` và latch DANGER trong khoảng 1.5 giây.
+thì mức impact là `DANGER` trong lần đọc hiện tại. Firmware dùng thay đổi lớn thứ hai trong nhóm 20 mẫu để một mẫu nhiễu đơn lẻ không tạo báo động giả.
 
 Ngưỡng này cũng phải hiệu chỉnh bằng thử nghiệm va chạm thực tế an toàn.
 
@@ -447,30 +440,7 @@ Ngưỡng này cũng phải hiệu chỉnh bằng thử nghiệm va chạm thự
 
 ## 18. Alert F7
 
-Topic:
-
-```text
-disaster/f7/alert
-```
-
-Ví dụ:
-
-```json
-{
-  "deviceId": "f7-01",
-  "type": "TILT",
-  "level": "DANGER",
-  "tiltAngleDeg": 24.3,
-  "vibrationRms": 0.31,
-  "impactDelta": 0.22
-}
-```
-
-Alert có cooldown 10 giây để tránh spam.
-
-Nếu node phát hiện event khi mất MQTT, firmware giữ **1 alert gần nhất trong RAM** và thử publish sau khi kết nối lại.
-
-Backend sau đó mới gọi PushSafer/IFTTT/notification service. API key notification không nằm trong ESP.
+F7 publish trạng thái `NORMAL`, `WARNING` hoặc `DANGER` lên `disaster/f7/state`. Backend nhận telemetry F7, sau đó mới quyết định gửi Pushsafer. API key notification không nằm trong ESP.
 
 ---
 
@@ -482,31 +452,19 @@ Topic:
 disaster/f7/telemetry
 ```
 
-Firmware đọc MPU6050 ở 50 Hz nhưng chỉ publish 1 Hz.
+Firmware đọc một nhóm 20 mẫu và publish mỗi 2 giây.
 
 Ví dụ:
 
 ```json
 {
-  "deviceId": "f7-01",
-  "accelX": 0.1,
-  "accelY": 0.2,
-  "accelZ": 9.7,
-  "gyroX": 0.01,
-  "gyroY": 0.02,
-  "gyroZ": 0.01,
-  "rollDeg": 1.2,
-  "pitchDeg": -2.1,
-  "tiltAngleDeg": 3.0,
-  "vibrationRms": 0.12,
-  "impactDelta": 0.15,
-  "tiltDanger": false,
-  "vibrationDanger": false,
-  "impactDanger": false,
-  "status": "NORMAL",
-  "batterySupported": false,
-  "batteryVoltage": null,
-  "batteryPercent": null
+  "deviceId": "f7-station-01",
+  "roll": 1.2,
+  "pitch": -2.1,
+  "tilt": 3.0,
+  "vibration": 0.12,
+  "impact": 0.15,
+  "status": "NORMAL"
 }
 ```
 
@@ -619,10 +577,12 @@ mosquitto_sub -h <BROKER_IP> -t 'disaster/f7/#' -v
 10. Test XIAO + I2C MPU6050.
 11. Giữ F7 yên 2 giây để calibration.
 12. Nghiêng nhẹ -> WARNING, nghiêng mạnh -> DANGER.
-13. Tạo rung có kiểm soát -> kiểm tra `vibrationRms`.
-14. Tạo va chạm nhẹ, an toàn -> kiểm tra event `IMPACT`.
-15. Tắt broker rồi bật lại -> xác nhận hai ESP tự reconnect.
-16. Chạy soak test ít nhất 60 phút trước khi đóng hộp.
+13. Tạo rung có kiểm soát -> kiểm tra `vibration`.
+14. Tạo va chạm nhẹ, an toàn -> kiểm tra `impact`.
+15. Xác nhận telemetry F7 và frontend thay đổi mỗi 2 giây.
+16. Đặt `LOCAL_TEST_MODE = true` trong cả hai firmware, nạp F7 trước rồi Main.
+17. Kiểm tra F7 báo Main đã kết nối và Main nhận `[UDP] Motion` mỗi 2 giây.
+18. Đặt `LOCAL_TEST_MODE = false` và nạp lại sau khi test.
 
 ---
 
@@ -642,10 +602,9 @@ MAIN
 - WATER_DANGER_DISTANCE_CM
 
 F7
-- TILT_WARNING_ENTER / EXIT
-- TILT_DANGER_ENTER / EXIT
-- VIB_WARNING_ENTER / EXIT
-- VIB_DANGER_ENTER / EXIT
+- TILT_WARNING_DEGREES / TILT_DANGER_DEGREES
+- VIBRATION_WARNING / VIBRATION_DANGER
+- IMPACT_DANGER
 - IMPACT_DELTA_THRESHOLD
 ```
 
@@ -663,11 +622,11 @@ DHT + MQ2 + Water
         |
         v
 PROCESS
-filter + hysteresis
+lấy trung bình + so sánh ngưỡng
         |
         v
 DECIDE
-GasState + WaterState
+Temperature + Gas + Water + Motion
         |
         +------> LOCAL SAFETY: LED + Buzzer
         |
@@ -681,31 +640,29 @@ SAFE             -> clear mute for the next event
 ### F7
 
 ```text
-READ MPU6050 @ 50 Hz
+READ 5 MPU6050 SAMPLES
         |
         v
-CALIBRATE / FILTER
+AVERAGE / COMPARE WITH BASELINE
         |
         v
-Tilt + Vibration RMS + Impact
+Tilt + Vibration + Impact
         |
         v
 NORMAL / WARNING / DANGER
         |
-        +------> MQTT telemetry @ 1 Hz
-        |
-        +------> MQTT alert on dangerous event
+        +------> MQTT telemetry every 2 seconds
+        +------> UDP local every 2 seconds when Main joins F7 AP
 ```
 
 ---
 
 ## 27. Trạng thái hiện tại của firmware
 
-Hai file firmware đã có đầy đủ skeleton chạy thực tế gồm:
+Hai file firmware hiện có các phần chính:
 
 - sensor polling;
-- filtering;
-- hysteresis;
+- lấy trung bình cảm biến;
 - local safety;
 - Wi-Fi reconnect;
 - MQTT reconnect;
@@ -714,8 +671,7 @@ Hai file firmware đã có đầy đủ skeleton chạy thực tế gồm:
 - buzzer command + state ACK;
 - MPU6050 calibration;
 - tilt/vibration/impact;
-- alert cooldown;
-- offline alert queue cho F7;
-- timestamp UTC qua NTP khi mạng khả dụng.
+- F7 access point và UDP fallback local;
+- chu kỳ telemetry 2 giây.
 
 Phần còn lại quan trọng nhất trước demo không phải thêm nhiều code, mà là **calibration threshold bằng dữ liệu thật và test end-to-end**.

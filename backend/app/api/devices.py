@@ -1,10 +1,15 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
+from ..database import get_db
+from ..database.repository import list_f7_readings
 from ..mqtt import mqtt_client
 from ..mqtt.topics import BUZZER_COMMAND_TOPIC
 from ..schemas.devices import (
     BuzzerCommand,
     BuzzerCommandResponse,
+    F7ReadingResponse,
     F7TelemetryResponse,
 )
 
@@ -15,6 +20,20 @@ router = APIRouter(prefix="/api/devices", tags=["Devices"])
 @router.get("/f7/latest", response_model=F7TelemetryResponse | None)
 def latest_f7_telemetry() -> dict | None:
     return mqtt_client.latest_f7
+
+
+@router.get("/f7/readings", response_model=list[F7ReadingResponse])
+def f7_reading_history(
+    limit: int = Query(default=20, ge=1, le=100),
+    database: Session = Depends(get_db),
+) -> list[F7ReadingResponse]:
+    try:
+        return list_f7_readings(database, limit)
+    except SQLAlchemyError as error:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Không thể đọc lịch sử F7 từ PostgreSQL.",
+        ) from error
 
 
 @router.post("/main/buzzer", response_model=BuzzerCommandResponse)
