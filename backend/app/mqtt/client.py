@@ -24,87 +24,66 @@ from .topics import (
 
 logger = logging.getLogger("uvicorn.error")
 
-SENSOR_HEIGHT_CM = 100.0
 F7_DATA_MAX_AGE_SECONDS = 10
+SAFETY_STATUSES = {"SAFE", "WARNING", "DANGER"}
 
 
-def first_available_value(
-    telemetry: dict,
-    field_names: list[str],
-    default: object = None,
-) -> object:
-    """Return the first field that exists, including a field containing null."""
-    for field_name in field_names:
-        if field_name in telemetry:
-            return telemetry[field_name]
+def validate_safety_status(value: object, field_name: str) -> str:
+    normalized_value = str(value).upper()
 
-    return default
+    if normalized_value not in SAFETY_STATUSES:
+        raise ValueError(
+            f"{field_name} phải là SAFE, WARNING hoặc DANGER."
+        )
+
+    return normalized_value
 
 
 def normalize_main_telemetry(
     telemetry: dict,
     received_at: datetime | None = None,
 ) -> dict:
-    """Convert ESP32 camelCase fields to simple backend field names."""
-    distance_cm = first_available_value(telemetry, ["distanceCm", "distance"])
-    water_level_cm = first_available_value(
-        telemetry,
-        ["waterLevelCm", "waterLevel", "water"],
+    """Validate the single Main MQTT contract and convert it to backend names."""
+    required_fields = (
+        "deviceId",
+        "temperature",
+        "humidity",
+        "gas",
+        "distanceCm",
+        "waterLevelCm",
+        "motion",
+        "system",
+        "buzzer",
+        "buzzerMuted",
     )
-    water_level_percent = first_available_value(
-        telemetry,
-        ["waterLevelPercent"],
-    )
+    missing_fields = [field for field in required_fields if field not in telemetry]
 
-    if water_level_percent is None and water_level_cm is not None:
-        water_level_percent = float(water_level_cm) / SENSOR_HEIGHT_CM * 100.0
-
-    gas_raw = first_available_value(
-        telemetry,
-        ["gasRaw", "gas", "smoke"],
-        0,
-    )
-    gas_filtered = first_available_value(
-        telemetry,
-        ["gasFiltered"],
-        gas_raw,
-    )
+    if missing_fields:
+        raise ValueError(
+            "Main telemetry thiếu field bắt buộc: " + ", ".join(missing_fields)
+        )
 
     return {
         "timestamp": received_at or datetime.now(timezone.utc),
-        "device_id": first_available_value(
-            telemetry,
-            ["deviceId"],
-            "main-station-01",
-        ),
-        "temperature": telemetry.get("temperature", 0.0),
-        "humidity": telemetry.get("humidity", 0.0),
-        "gas_raw": gas_raw,
-        "gas_filtered": gas_filtered,
-        "distance_cm": distance_cm,
-        "water_level_cm": water_level_cm,
-        "water_level_percent": water_level_percent,
-        "motion_status": first_available_value(
-            telemetry,
-            ["motion", "motionStatus"],
-            "SAFE",
-        ),
-        "motion_source": telemetry.get("motionSource", "MQTT"),
-        "motion_roll": telemetry.get("motionRoll"),
-        "motion_pitch": telemetry.get("motionPitch"),
-        "motion_tilt": telemetry.get("motionTilt"),
-        "motion_vibration": telemetry.get("motionVibration"),
-        "motion_impact": telemetry.get("motionImpact"),
-        "system_status": first_available_value(
-            telemetry,
-            ["system", "systemStatus"],
-            "SAFE",
-        ),
-        "buzzer": telemetry.get("buzzer")
-        if isinstance(telemetry.get("buzzer"), bool)
+        "device_id": telemetry["deviceId"],
+        "temperature": telemetry["temperature"],
+        "humidity": telemetry["humidity"],
+        "gas_average": telemetry["gas"],
+        "distance_cm": telemetry["distanceCm"],
+        "water_level_cm": telemetry["waterLevelCm"],
+        "motion_status": validate_safety_status(telemetry["motion"], "motion"),
+        "f7_roll": None,
+        "f7_pitch": None,
+        "f7_tilt": None,
+        "f7_vibration": None,
+        "f7_impact": None,
+        "f7_status": None,
+        "system_status": validate_safety_status(telemetry["system"], "system"),
+        "buzzer": telemetry["buzzer"]
+        if isinstance(telemetry["buzzer"], bool)
         else None,
-        "buzzer_muted": telemetry.get("buzzerMuted")
-        if isinstance(telemetry.get("buzzerMuted"), bool)
+        "buzzer_muted": telemetry["buzzerMuted"]
+        if isinstance(telemetry["buzzerMuted"], bool)
         else None,
     }
 
@@ -309,17 +288,15 @@ class MQTTClient:
                     device_id=str(sensor_record["device_id"]),
                     temperature=float(sensor_record["temperature"]),
                     humidity=float(sensor_record["humidity"]),
-                    gas_raw=sensor_record["gas_raw"],
-                    gas_filtered=sensor_record["gas_filtered"],
+                    gas_average=sensor_record["gas_average"],
                     distance_cm=sensor_record["distance_cm"],
                     water_level_cm=sensor_record["water_level_cm"],
-                    water_level_percent=sensor_record["water_level_percent"],
-                    f7_roll=sensor_record["motion_roll"],
-                    f7_pitch=sensor_record["motion_pitch"],
-                    f7_tilt=sensor_record["motion_tilt"],
-                    f7_vibration=sensor_record["motion_vibration"],
-                    f7_impact=sensor_record["motion_impact"],
-                    f7_status=str(sensor_record["motion_status"]),
+                    f7_roll=sensor_record["f7_roll"],
+                    f7_pitch=sensor_record["f7_pitch"],
+                    f7_tilt=sensor_record["f7_tilt"],
+                    f7_vibration=sensor_record["f7_vibration"],
+                    f7_impact=sensor_record["f7_impact"],
+                    f7_status=sensor_record["f7_status"],
                     status=str(sensor_record["system_status"]),
                     buzzer=sensor_record["buzzer"],
                     buzzer_muted=sensor_record["buzzer_muted"],
@@ -335,8 +312,7 @@ class MQTTClient:
     def _run_ai_prediction(self, sensor_record: dict) -> None:
         self._latest_ai_prediction = ai_prediction_service.predict(
             temperature=sensor_record["temperature"],
-            humidity=sensor_record["humidity"],
-            gas_level=sensor_record["gas_filtered"],
+            gas_average=sensor_record["gas_average"],
             water_level_cm=sensor_record["water_level_cm"],
         )
 
@@ -353,15 +329,12 @@ class MQTTClient:
             if data_age.total_seconds() > F7_DATA_MAX_AGE_SECONDS:
                 return
 
-        sensor_record["motion_roll"] = self._latest_f7.get("roll")
-        sensor_record["motion_pitch"] = self._latest_f7.get("pitch")
-        sensor_record["motion_tilt"] = self._latest_f7.get("tilt")
-        sensor_record["motion_vibration"] = self._latest_f7.get("vibration")
-        sensor_record["motion_impact"] = self._latest_f7.get("impact")
-        sensor_record["motion_status"] = self._latest_f7.get(
-            "status",
-            sensor_record["motion_status"],
-        )
+        sensor_record["f7_roll"] = self._latest_f7.get("roll")
+        sensor_record["f7_pitch"] = self._latest_f7.get("pitch")
+        sensor_record["f7_tilt"] = self._latest_f7.get("tilt")
+        sensor_record["f7_vibration"] = self._latest_f7.get("vibration")
+        sensor_record["f7_impact"] = self._latest_f7.get("impact")
+        sensor_record["f7_status"] = self._latest_f7.get("status")
 
     def _handle_main_telemetry(self, telemetry: dict) -> None:
         sensor_record = normalize_main_telemetry(telemetry)
@@ -375,19 +348,6 @@ class MQTTClient:
 
         if sensor_record["buzzer_muted"] is not None:
             self._buzzer_muted = bool(sensor_record["buzzer_muted"])
-
-        if telemetry.get("motionSource") == "DIRECT":
-            self._latest_f7 = {
-                "device_id": "f7-station-01",
-                "roll": telemetry.get("motionRoll"),
-                "pitch": telemetry.get("motionPitch"),
-                "tilt": telemetry.get("motionTilt"),
-                "vibration": telemetry.get("motionVibration"),
-                "impact": telemetry.get("motionImpact"),
-                "status": str(sensor_record["motion_status"]).upper(),
-                "received_at": datetime.now(timezone.utc),
-            }
-            self._f7_status = "direct"
 
         # Main and F7 publish every 2 seconds. Add the latest F7 values to the
         # same PostgreSQL snapshot and to ThingSpeak Field 7.
@@ -406,14 +366,34 @@ class MQTTClient:
 
     def _handle_f7_telemetry(self, payload: str) -> None:
         data = json.loads(payload)
+        required_fields = (
+            "deviceId",
+            "roll",
+            "pitch",
+            "tilt",
+            "vibration",
+            "impact",
+            "status",
+        )
+
+        if not isinstance(data, dict):
+            raise ValueError("F7 telemetry phải là một JSON object.")
+
+        missing_fields = [field for field in required_fields if field not in data]
+
+        if missing_fields:
+            raise ValueError(
+                "F7 telemetry thiếu field bắt buộc: " + ", ".join(missing_fields)
+            )
+
         self._latest_f7 = {
-            "device_id": data.get("deviceId", "f7-station-01"),
-            "roll": data.get("roll"),
-            "pitch": data.get("pitch"),
-            "tilt": data.get("tilt"),
-            "vibration": data.get("vibration"),
-            "impact": data.get("impact"),
-            "status": data.get("status", "UNKNOWN").upper(),
+            "device_id": data["deviceId"],
+            "roll": data["roll"],
+            "pitch": data["pitch"],
+            "tilt": data["tilt"],
+            "vibration": data["vibration"],
+            "impact": data["impact"],
+            "status": validate_safety_status(data["status"], "status"),
             "received_at": datetime.now(timezone.utc),
         }
         self._f7_status = "online"
@@ -430,15 +410,16 @@ class MQTTClient:
         # Field 7. The shared ThingSpeak timer still limits uploads to 15 s.
         if not main_data_is_recent:
             thingspeak_client.upload({
-                "motion_vibration": self._latest_f7["vibration"],
+                "f7_vibration": self._latest_f7["vibration"],
             })
 
         f7_status = str(self._latest_f7["status"]).upper()
-        alert_service.notify_if_needed(
-            source="f7_station",
-            current_status=f7_status,
-            message=build_f7_danger_message(self._latest_f7),
-        )
+        if not main_data_is_recent or f7_status == "SAFE":
+            alert_service.notify_if_needed(
+                source="f7_station",
+                current_status=f7_status,
+                message=build_f7_danger_message(self._latest_f7),
+            )
 
     def _on_message(
         self,

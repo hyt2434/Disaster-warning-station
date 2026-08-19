@@ -14,11 +14,11 @@ def test_thingspeak_payload_uses_seven_simple_fields() -> None:
     sensor_record = {
         "temperature": 32.5,
         "humidity": 68.0,
-        "gas_filtered": 1420,
+        "gas_average": 1420,
         "water_level_cm": 65.0,
         "motion_status": "WARNING",
         "system_status": "DANGER",
-        "motion_vibration": 0.25,
+        "f7_vibration": 0.25,
     }
 
     payload = build_thingspeak_payload(sensor_record, "test-key")
@@ -39,7 +39,7 @@ def test_thingspeak_payload_does_not_change_null_water_to_zero() -> None:
     sensor_record = {
         "temperature": 30.0,
         "humidity": 70.0,
-        "gas_filtered": 900,
+        "gas_average": 900,
         "water_level_cm": None,
         "motion_status": "SAFE",
         "system_status": "SAFE",
@@ -54,7 +54,7 @@ def test_thingspeak_payload_does_not_change_null_water_to_zero() -> None:
 
 def test_f7_can_upload_only_field7_when_main_is_offline() -> None:
     payload = build_thingspeak_payload(
-        {"motion_vibration": 0.42},
+        {"f7_vibration": 0.42},
         "test-key",
     )
 
@@ -87,9 +87,8 @@ def test_ai_training_reads_thingspeak_field_mapping() -> None:
 
     assert list(features.columns) == [
         "temperature",
-        "humidity",
-        "gas_filtered",
-        "water_danger",
+        "gas_average",
+        "water_level_cm",
     ]
     assert len(features) == 100
     assert labels.iloc[-1] == 1
@@ -118,7 +117,7 @@ def test_future_value_estimation_reads_all_seven_thingspeak_fields() -> None:
     assert len(result["fields"]) == 7
     assert result["fields"][0]["predicted"] > 31.9
     assert result["fields"][1]["predicted"] == 70
-    assert result["fields"][5]["predicted"] == 2
+    assert result["fields"][5]["predicted"] == 1
 
 
 def test_thingspeak_history_is_ready_for_frontend_chart() -> None:
@@ -170,7 +169,7 @@ def test_future_values_are_sent_to_ai_and_warning_cause_is_explained(
     result = build_system_prediction(future_data)
 
     assert received_model_values["temperature"] == 36.0
-    assert received_model_values["gas_level"] == 1100.0
+    assert received_model_values["gas_average"] == 1100.0
     assert result["system_prediction"] == "WARNING"
     assert result["causes"][0]["sensor"] == "Nhiệt độ"
     assert result["causes"][0]["level"] == "WARNING"

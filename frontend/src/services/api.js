@@ -30,13 +30,6 @@ export function getThingSpeakHistory() {
   return request('/api/readings/thingspeak-history');
 }
 
-export function createReading(payload) {
-  return request('/api/readings', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  });
-}
-
 export function getLatestF7Telemetry() {
   return request('/api/devices/f7/latest');
 }

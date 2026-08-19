@@ -212,12 +212,12 @@ Khi đó MQTT Broker IP là:
 
 ESP sẽ sử dụng:
 
-const char* MQTT_SERVER = "172.20.10.2";
+const char* MQTT_HOST = "172.20.10.2";
 const int MQTT_PORT = 1883;
 
 Không dùng:
 
-const char* MQTT_SERVER = "127.0.0.1";
+const char* MQTT_HOST = "127.0.0.1";
 
 10. Kiểm tra laptop có thể publish/subscribe qua IP LAN
 
@@ -265,23 +265,17 @@ Nếu được thì broker đã hoạt động đúng ở mức cơ bản.
 
 Trong firmware ESP32-S3 Main:
 
-const char* MQTT_SERVER = "IP_LAPTOP";
+const char* MQTT_HOST = "IP_LAPTOP";
 const int MQTT_PORT = 1883;
-const char* MQTT_CLIENT_ID = "ESP32-MAIN";
+const char* DEVICE_ID = "main-station-01";
 
 Ví dụ:
 
-const char* MQTT_SERVER = "172.20.10.2";
+const char* MQTT_HOST = "172.20.10.2";
 const int MQTT_PORT = 1883;
-const char* MQTT_CLIENT_ID = "ESP32-MAIN";
+const char* DEVICE_ID = "main-station-01";
 
-Topic test:
-
-const char* MQTT_TOPIC = "disaster/main/test";
-
-Message test:
-
-Hello from MAIN
+Firmware final publish `disaster/main/telemetry` mỗi 2 giây.
 
 Laptop subscribe:
 
@@ -289,30 +283,25 @@ Laptop subscribe:
 
 Mong muốn:
 
-disaster/main/test Hello from MAIN
+disaster/main/telemetry {"deviceId":"main-station-01",...}
 
 12. Cấu hình XIAO ESP32-C3 F7
 
 XIAO dùng cùng broker:
 
-const char* MQTT_SERVER = "172.20.10.2";
+const char* MQTT_HOST = "172.20.10.2";
 const int MQTT_PORT = 1883;
 
 Nhưng phải dùng Client ID khác Main:
 
-const char* MQTT_CLIENT_ID = "XIAO-F7";
+const char* DEVICE_ID = "f7-station-01";
 
-Topic:
-
-const char* MQTT_TOPIC = "disaster/f7/test";
-
-Message:
-
-Hello from F7
+Firmware final publish `disaster/f7/state`, `disaster/f7/telemetry` và `disaster/f7/status`.
 
 Mong muốn trên laptop:
 
-disaster/f7/test Hello from F7
+disaster/f7/state SAFE
+disaster/f7/telemetry {"deviceId":"f7-station-01",...}
 
 13. Client ID phải khác nhau
 
@@ -321,10 +310,7 @@ Không dùng:
 MAIN → ESP32-CLIENT
 F7   → ESP32-CLIENT
 
-Nên dùng:
-
-MAIN → ESP32-MAIN
-F7   → XIAO-F7
+Firmware tạo MQTT Client ID runtime từ `DEVICE_ID` và phần cuối MAC, nên Main và F7 tự có ID khác nhau.
 
 Nếu hai thiết bị dùng cùng MQTT Client ID, broker có thể ngắt client cũ khi client mới kết nối.
 
@@ -332,8 +318,9 @@ Nếu hai thiết bị dùng cùng MQTT Client ID, broker có thể ngắt clien
 
 Subscriber laptop:
 
-disaster/main/test Hello from MAIN
-disaster/f7/test Hello from F7
+disaster/main/telemetry {"deviceId":"main-station-01",...}
+disaster/f7/state SAFE
+disaster/f7/telemetry {"deviceId":"f7-station-01",...}
 
 Checklist:
 
@@ -349,8 +336,8 @@ Checklist:
 [ ] F7 và laptop cùng mạng
 [ ] MAIN có Client ID riêng
 [ ] F7 có Client ID riêng
-[ ] mosquitto_sub nhận Hello from MAIN
-[ ] mosquitto_sub nhận Hello from F7
+[ ] mosquitto_sub nhận Main telemetry
+[ ] mosquitto_sub nhận F7 state và telemetry
 
 15. Các lỗi thường gặp
 
@@ -366,7 +353,7 @@ Laptop:1883
 
 Kiểm tra:
 
-- MQTT_SERVER có đúng IPv4 laptop không?
+- MQTT_HOST có đúng IPv4 laptop không?
 - Laptop và ESP có cùng Wi-Fi không?
 - Mosquitto có chạy không?
 - netstat có 0.0.0.0:1883 không?

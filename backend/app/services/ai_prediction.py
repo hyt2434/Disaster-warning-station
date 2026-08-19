@@ -8,9 +8,6 @@ import numpy as np
 logger = logging.getLogger("uvicorn.error")
 
 MODEL_PATH = Path(__file__).resolve().parent.parent / "ml_models" / "disaster_model.pkl"
-WATER_DANGER_LEVEL_CM = 70.0
-
-
 class AIPredictionService:
     """Load the trained model once and use it for current or future sensor data."""
 
@@ -25,6 +22,14 @@ class AIPredictionService:
     def _load_model(self) -> None:
         try:
             self._model = joblib.load(MODEL_PATH)
+
+            if getattr(self._model, "n_features_in_", None) != 3:
+                logger.error(
+                    "Model AI dùng schema feature cũ. Hãy chạy lại ai/train.py hoặc ai/retrain.py."
+                )
+                self._model = None
+                return
+
             logger.info("Đã tải mô hình AI từ: %s", MODEL_PATH)
         except FileNotFoundError:
             logger.error("Không tìm thấy file mô hình AI tại: %s", MODEL_PATH)
@@ -35,8 +40,7 @@ class AIPredictionService:
     def predict(
         self,
         temperature: float | None,
-        humidity: float | None,
-        gas_level: float | None,
+        gas_average: float | None,
         water_level_cm: float | None,
     ) -> str:
         """Return danger, safe, insufficient_data, unavailable or not_run."""
@@ -45,18 +49,15 @@ class AIPredictionService:
 
         if (
             temperature is None
-            or humidity is None
-            or gas_level is None
+            or gas_average is None
             or water_level_cm is None
         ):
             return "insufficient_data"
 
-        water_is_dangerous = water_level_cm >= WATER_DANGER_LEVEL_CM
         model_input = np.array([[
             float(temperature),
-            float(humidity),
-            float(gas_level),
-            1.0 if water_is_dangerous else 0.0,
+            float(gas_average),
+            float(water_level_cm),
         ]])
 
         try:

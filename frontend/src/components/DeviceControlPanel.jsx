@@ -9,7 +9,6 @@ function getSystemState(health, latestReading) {
 function getSystemLabel(systemState) {
   const labels = {
     safe: 'AN TOÀN',
-    normal: 'AN TOÀN',
     warning: 'CẢNH BÁO',
     danger: 'NGUY HIỂM',
     unknown: 'CHƯA XÁC ĐỊNH',
@@ -27,7 +26,7 @@ function getSystemTone(systemState) {
     return 'warning';
   }
 
-  if (systemState === 'safe' || systemState === 'normal') {
+  if (systemState === 'safe') {
     return 'normal';
   }
 

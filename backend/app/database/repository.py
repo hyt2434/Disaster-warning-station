@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..schemas import SensorReadingCreate
-from .models import Device, SensorReading
+from .models import SensorReading
 
 
 def list_readings(database: Session, limit: int) -> list[SensorReading]:
@@ -19,30 +19,13 @@ def get_latest_reading(database: Session) -> SensorReading | None:
 
 def create_reading(database: Session, payload: SensorReadingCreate) -> SensorReading:
     now = datetime.now(timezone.utc)
-    device = database.scalar(select(Device).where(Device.device_id == payload.device_id))
-
-    if device is None:
-        device = Device(
-            device_id=payload.device_id,
-            device_name="Main Station",
-            device_type="main_station",
-            online=True,
-            last_seen=now,
-        )
-        database.add(device)
-    else:
-        device.online = True
-        device.last_seen = now
-
     reading = SensorReading(
         device_id=payload.device_id,
         temperature=payload.temperature,
         humidity=payload.humidity,
-        gas_raw=payload.gas_raw,
-        gas_filtered=payload.gas_filtered,
+        gas_average=payload.gas_average,
         distance_cm=payload.distance_cm,
         water_level_cm=payload.water_level_cm,
-        water_level_percent=payload.water_level_percent,
         f7_roll=payload.f7_roll,
         f7_pitch=payload.f7_pitch,
         f7_tilt=payload.f7_tilt,

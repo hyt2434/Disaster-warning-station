@@ -29,7 +29,6 @@ F7_VIBRATION_WARNING = 0.80
 F7_VIBRATION_DANGER = 2.00
 
 STATUS_NUMBER = {
-    "NORMAL": 0,
     "SAFE": 0,
     "WARNING": 1,
     "DANGER": 2,
@@ -125,24 +124,25 @@ def calculate_five_minute_values(
             field_predictions.append({"field": field_name, "predicted": None})
             continue
 
-        first_time, first_value = valid_points[0]
         latest_time, latest_value = valid_points[-1]
-        elapsed_minutes = (latest_time - first_time).total_seconds() / 60
 
-        if len(valid_points) < 2 or elapsed_minutes <= 0:
+        if field_config["is_status"]:
             predicted_value = latest_value
         else:
-            change_per_minute = (latest_value - first_value) / elapsed_minutes
-            predicted_value = latest_value + change_per_minute * PREDICTION_MINUTES
+            first_time, first_value = valid_points[0]
+            elapsed_minutes = (latest_time - first_time).total_seconds() / 60
+
+            if len(valid_points) < 2 or elapsed_minutes <= 0:
+                predicted_value = latest_value
+            else:
+                change_per_minute = (latest_value - first_value) / elapsed_minutes
+                predicted_value = latest_value + change_per_minute * PREDICTION_MINUTES
 
         predicted_value = _limit_value(
             predicted_value,
             field_config["minimum"],
             field_config["maximum"],
         )
-
-        if field_config["is_status"]:
-            predicted_value = round(predicted_value)
 
         field_predictions.append({
             "field": field_name,
@@ -195,16 +195,14 @@ def build_system_prediction(future_data: dict) -> dict:
     }
 
     temperature = fields_by_name["field1"]["predicted"]
-    humidity = fields_by_name["field2"]["predicted"]
-    gas_level = fields_by_name["field3"]["predicted"]
+    gas_average = fields_by_name["field3"]["predicted"]
     water_level = fields_by_name["field4"]["predicted"]
     motion_status = fields_by_name["field5"]["predicted"]
     f7_vibration = fields_by_name["field7"]["predicted"]
 
     model_result = ai_prediction_service.predict(
         temperature=temperature,
-        humidity=humidity,
-        gas_level=gas_level,
+        gas_average=gas_average,
         water_level_cm=water_level,
     )
 
@@ -221,12 +219,12 @@ def build_system_prediction(future_data: dict) -> dict:
             TEMPERATURE_DANGER,
         )
 
-    if gas_level is not None:
+    if gas_average is not None:
         _add_cause(
             causes,
             "field3",
             "Khói / gas",
-            gas_level,
+            gas_average,
             "ADC",
             GAS_WARNING,
             GAS_DANGER,
@@ -273,7 +271,7 @@ def build_system_prediction(future_data: dict) -> dict:
     elif has_warning_cause:
         system_prediction = "WARNING"
     elif model_result == "safe":
-        system_prediction = "NORMAL"
+        system_prediction = "SAFE"
     else:
         system_prediction = "INSUFFICIENT_DATA"
 
@@ -310,11 +308,11 @@ def build_thingspeak_payload(sensor_record: dict, api_key: str) -> dict:
         "api_key": api_key,
         "field1": sensor_record.get("temperature"),
         "field2": sensor_record.get("humidity"),
-        "field3": sensor_record.get("gas_filtered"),
+        "field3": sensor_record.get("gas_average"),
         "field4": sensor_record.get("water_level_cm"),
         "field5": motion_status_number,
         "field6": system_status_number,
-        "field7": sensor_record.get("motion_vibration"),
+        "field7": sensor_record.get("f7_vibration"),
     }
 
     # ThingSpeak should receive no field when a sensor value is unknown.

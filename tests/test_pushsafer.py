@@ -21,7 +21,7 @@ def test_pushsafer_payload_contains_required_fields() -> None:
 def test_main_danger_message_only_lists_dangerous_values() -> None:
     message = build_main_danger_message({
         "temperature": 42.5,
-        "gas_filtered": 1000,
+        "gas_average": 1000,
         "water_level_cm": 72.0,
         "motion_status": "SAFE",
     })

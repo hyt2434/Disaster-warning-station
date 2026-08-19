@@ -115,13 +115,9 @@ Tạo database mới, ví dụ:
 CREATE DATABASE disaster_warning;
 ```
 
-Sau đó chạy file:
+Khởi động backend. SQLAlchemy models và `create_tables()` sẽ tạo `sensor_readings` trên database trống. `infrastructure/database/schema.sql` chỉ là bản tham khảo hoặc lựa chọn setup thủ công, không phải bước bắt buộc thêm.
 
-```text
-infrastructure/database/schema.sql
-```
-
-Chỉ chạy file này một lần trên database trống và chạy trước khi bật backend. File đã có sẵn các cột `f7_roll`, `f7_pitch`, `f7_tilt`, `f7_vibration`, `f7_impact`, `f7_status` trong `sensor_readings`, nên không cần bảng F7 riêng hoặc chạy thêm `ALTER TABLE`.
+Nếu đã từng chạy schema cũ, phải recreate database hoặc migrate thủ công trước. `create_all()` không tự đổi table đã tồn tại. Với database demo không cần giữ dữ liệu, hãy backup nếu cần rồi tạo lại database trống.
 
 ## 6. Cấu hình `.env`
 
@@ -162,7 +158,7 @@ Trạng thái được đổi thành số để vẽ biểu đồ:
 
 | Trạng thái | Giá trị |
 |---|---:|
-| NORMAL hoặc SAFE | 0 |
+| SAFE | 0 |
 | WARNING | 1 |
 | DANGER | 2 |
 
@@ -239,13 +235,15 @@ Sau khi ThingSpeak có ít nhất 100 bản ghi hợp lệ:
 python ai/retrain.py
 ```
 
-AI đọc Field 1–4, bỏ các mẫu thiếu dữ liệu và lưu model tại:
+AI đọc Field 1, 3 và 4, bỏ các mẫu thiếu dữ liệu và lưu model tại:
 
 ```text
 backend/app/ml_models/disaster_model.pkl
 ```
 
 Khởi động lại backend sau khi retrain để nạp model mới.
+
+Random Forest hiện là classifier demo. Nhãn train được sinh từ cùng các rule nguy hiểm của firmware (nhiệt độ, gas và nước), không phải ground-truth thiên tai độc lập. F5 ngoại suy sensor đến +5 phút trước rồi mới dùng classifier đánh giá rủi ro.
 
 ## 12. Kiểm tra nhanh trước khi demo
 

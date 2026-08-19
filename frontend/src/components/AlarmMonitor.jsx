@@ -23,15 +23,23 @@ function findSensorWarnings(reading) {
   const warnings = [];
 
   if (reading.temperature >= SENSOR_THRESHOLDS.temperature.danger) {
-    warnings.push('Nhiệt độ cao');
+    warnings.push('Nhiệt độ nguy hiểm');
+  } else if (reading.temperature >= SENSOR_THRESHOLDS.temperature.warning) {
+    warnings.push('Nhiệt độ ở mức cảnh báo');
   }
 
-  if (reading.gas_raw >= SENSOR_THRESHOLDS.gas.danger) {
-    warnings.push('Khói hoặc gas cao');
+  if (reading.gas_average >= SENSOR_THRESHOLDS.gas.danger) {
+    warnings.push('Khói hoặc gas nguy hiểm');
+  } else if (reading.gas_average >= SENSOR_THRESHOLDS.gas.warning) {
+    warnings.push('Khói hoặc gas ở mức cảnh báo');
   }
 
-  if (getWaterAlarmLevel(reading) === 'danger') {
+  const waterLevel = getWaterAlarmLevel(reading);
+
+  if (waterLevel === 'danger') {
     warnings.push('Mực nước nguy hiểm');
+  } else if (waterLevel === 'warning') {
+    warnings.push('Mực nước ở mức cảnh báo');
   }
 
   return warnings;
@@ -43,18 +51,12 @@ function getAlarmLevel(reading, backendOnline) {
   }
 
   const deviceStatus = reading.status.toLowerCase();
-  const dangerWarnings = findSensorWarnings(reading);
 
-  if (deviceStatus === 'danger' || deviceStatus === 'critical' || dangerWarnings.length > 0) {
+  if (deviceStatus === 'danger') {
     return 'danger';
   }
 
-  const hasWarningValue =
-    reading.temperature >= SENSOR_THRESHOLDS.temperature.warning ||
-    reading.gas_raw >= SENSOR_THRESHOLDS.gas.warning ||
-    getWaterAlarmLevel(reading) === 'warning';
-
-  if (deviceStatus === 'warning' || hasWarningValue) {
+  if (deviceStatus === 'warning') {
     return 'warning';
   }
 
@@ -69,7 +71,7 @@ function formatUpdateTime(dateValue) {
   return new Intl.DateTimeFormat('vi-VN', {
     dateStyle: 'short',
     timeStyle: 'medium',
-    timeZone: 'Asia/Bangkok',
+    timeZone: 'Asia/Ho_Chi_Minh',
   }).format(new Date(dateValue));
 }
 

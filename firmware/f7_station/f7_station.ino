@@ -21,7 +21,7 @@
  * MPU6050 DATA:
  *   - Tilt: change of roll or pitch compared with startup position.
  *   - Vibration: average acceleration change in one reading group.
- *   - Impact: largest acceleration change in one reading group.
+ *   - Impact: second-largest acceleration change in one reading group.
  *
  * SEND INTERVAL: 2 seconds.
  * ============================================================
@@ -79,7 +79,7 @@ const bool LOCAL_TEST_MODE = false;
 const int MPU_SDA_PIN = 6;
 const int MPU_SCL_PIN = 7;
 
-const int NORMAL = 0;
+const int SAFE = 0;
 const int WARNING = 1;
 const int DANGER = 2;
 
@@ -120,19 +120,18 @@ WiFiUDP udp;
 
 float baselineRoll = 0.0;
 float baselinePitch = 0.0;
-float baselineAcceleration = 9.8;
-
 float roll = 0.0;
 float pitch = 0.0;
 float tiltAngle = 0.0;
 float vibrationValue = 0.0;
 float impactDelta = 0.0;
 
-int tiltLevel = NORMAL;
-int vibrationLevel = NORMAL;
-int impactLevel = NORMAL;
-int motionLevel = NORMAL;
+int tiltLevel = SAFE;
+int vibrationLevel = SAFE;
+int impactLevel = SAFE;
+int motionLevel = SAFE;
 
+bool mpuReady = false;
 bool motionSensorValid = false;
 bool calibrationSuccessful = false;
 
@@ -159,7 +158,7 @@ const char* levelToText(int level)
     return "WARNING";
   }
 
-  return "NORMAL";
+  return "SAFE";
 }
 
 float calculateRoll(float accelerationX, float accelerationY, float accelerationZ)
@@ -222,7 +221,6 @@ void calibrateMPU()
 
   float totalRoll = 0.0;
   float totalPitch = 0.0;
-  float totalAcceleration = 0.0;
   int validSampleCount = 0;
   int attemptCount = 0;
 
@@ -253,7 +251,6 @@ void calibrateMPU()
     {
       totalRoll += calculateRoll(accelerationX, accelerationY, accelerationZ);
       totalPitch += calculatePitch(accelerationX, accelerationY, accelerationZ);
-      totalAcceleration += accelerationMagnitude;
       validSampleCount++;
     }
 
@@ -269,7 +266,6 @@ void calibrateMPU()
 
   baselineRoll = totalRoll / validSampleCount;
   baselinePitch = totalPitch / validSampleCount;
-  baselineAcceleration = totalAcceleration / validSampleCount;
   calibrationSuccessful = true;
 
   Serial.println("[MPU] Calibration completed");
@@ -277,8 +273,6 @@ void calibrateMPU()
   Serial.println(baselineRoll);
   Serial.print("[MPU] Baseline pitch: ");
   Serial.println(baselinePitch);
-  Serial.print("[MPU] Baseline acceleration: ");
-  Serial.println(baselineAcceleration);
 }
 
 // ============================================================
@@ -392,7 +386,7 @@ int getTiltLevel()
     return WARNING;
   }
 
-  return NORMAL;
+  return SAFE;
 }
 
 int getVibrationLevel()
@@ -407,7 +401,7 @@ int getVibrationLevel()
     return WARNING;
   }
 
-  return NORMAL;
+  return SAFE;
 }
 
 int getImpactLevel()
@@ -417,17 +411,17 @@ int getImpactLevel()
     return DANGER;
   }
 
-  return NORMAL;
+  return SAFE;
 }
 
 void updateMotionLevel()
 {
   if (!motionSensorValid)
   {
-    tiltLevel = NORMAL;
-    vibrationLevel = NORMAL;
-    impactLevel = NORMAL;
-    motionLevel = NORMAL;
+    tiltLevel = SAFE;
+    vibrationLevel = SAFE;
+    impactLevel = SAFE;
+    motionLevel = SAFE;
     return;
   }
 
@@ -740,19 +734,21 @@ void setup()
 
   Serial.println("[MPU] Looking for MPU6050...");
 
-  while (!mpu.begin())
+  mpuReady = mpu.begin();
+
+  if (mpuReady)
   {
-    Serial.println("[MPU] Not found. Check SDA, SCL and power.");
-    delay(1000);
+    Serial.println("[MPU] Found");
+
+    mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
+    mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
+
+    calibrateMPU();
   }
-
-  Serial.println("[MPU] Found");
-
-  mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
-  mpu.setGyroRange(MPU6050_RANGE_500_DEG);
-  mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
-
-  calibrateMPU();
+  else
+  {
+    Serial.println("[MPU] Not found. Network remains available; check SDA, SCL and power.");
+  }
 
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setSocketTimeout(1);
@@ -780,14 +776,20 @@ void loop()
   {
     lastPublishTime = currentTime;
 
-    readMotionSensor();
-    updateMotionLevel();
+    if (mpuReady)
+    {
+      readMotionSensor();
+      updateMotionLevel();
+    }
 
-    // Normal path for Main, backend and web.
-    publishMQTTData();
+    if (motionSensorValid)
+    {
+      // Normal path for Main, backend and web.
+      publishMQTTData();
 
-    // Local safety path when Main is connected to the F7 access point.
-    sendDirectDataToMain();
+      // Local safety path when Main is connected to the F7 access point.
+      sendDirectDataToMain();
+    }
 
     printMotionData();
   }

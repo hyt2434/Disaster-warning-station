@@ -65,7 +65,7 @@ function SensorMeter({ value, maximumValue, tone }) {
 
 export function MonitoringFunctions({ latest }) {
   const temperatureTone = getTone(latest?.temperature, SENSOR_THRESHOLDS.temperature);
-  const gasTone = getTone(latest?.gas_raw, SENSOR_THRESHOLDS.gas);
+  const gasTone = getTone(latest?.gas_average, SENSOR_THRESHOLDS.gas);
   const waterTone = getWaterAlarmLevel(latest);
 
   return (
@@ -113,9 +113,9 @@ export function MonitoringFunctions({ latest }) {
           />
           <div className="single-sensor-value">
             <span>Giá trị MQ-2</span>
-            <strong>{formatValue(latest?.gas_raw, 0)}</strong>
+            <strong>{formatValue(latest?.gas_average, 0)}</strong>
           </div>
-          <SensorMeter value={latest?.gas_raw} maximumValue={1500} tone={gasTone} />
+          <SensorMeter value={latest?.gas_average} maximumValue={4095} tone={gasTone} />
           <div className={`function-state state-${gasTone}`}>{getToneLabel(gasTone)}</div>
           <p className="function-note">
             Cảnh báo từ {SENSOR_THRESHOLDS.gas.warning}, nguy hiểm từ {SENSOR_THRESHOLDS.gas.danger}.

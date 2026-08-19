@@ -35,7 +35,7 @@ def test_health_and_reading_flow() -> None:
             "ready",
         }
         assert health_data["main_device"] in {"online", "offline", "unknown"}
-        assert health_data["f7_device"] in {"online", "direct", "offline", "unknown"}
+        assert health_data["f7_device"] in {"online", "offline", "unknown"}
         assert health_data["system"] in {"safe", "warning", "danger", "unknown"}
         assert health_data["buzzer"] in {"on", "off", "unknown"}
         assert health_data["buzzer_muted"] in {True, False, None}
@@ -62,11 +62,9 @@ def test_health_and_reading_flow() -> None:
                 "device_id": "main-station-test",
                 "temperature": 31.5,
                 "humidity": 72.4,
-                "gas_raw": 1380,
-                "gas_filtered": 1372.5,
+                "gas_average": 1372.5,
                 "distance_cm": 28.0,
                 "water_level_cm": 72.0,
-                "water_level_percent": 72.0,
                 "f7_roll": 1.2,
                 "f7_pitch": -2.5,
                 "f7_tilt": 3.1,
@@ -90,7 +88,7 @@ def test_health_and_reading_flow() -> None:
                 "device_id": "main-station-test",
                 "temperature": 31.5,
                 "humidity": 72.4,
-                "gas_raw": 1380,
+                "gas_average": 1380,
                 "distance_cm": None,
                 "water_level_cm": None,
                 "status": "danger",
@@ -111,9 +109,8 @@ def test_health_and_reading_flow() -> None:
 
         first_reading = readings.json()[1]
         assert first_reading["device_id"] == "main-station-test"
-        assert first_reading["gas_filtered"] == 1372.5
+        assert first_reading["gas_average"] == 1372.5
         assert first_reading["distance_cm"] == 28.0
-        assert first_reading["water_level_percent"] == 72.0
         assert first_reading["f7_roll"] == 1.2
         assert first_reading["f7_pitch"] == -2.5
         assert first_reading["f7_tilt"] == 3.1

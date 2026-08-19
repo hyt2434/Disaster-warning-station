@@ -41,8 +41,15 @@ Body tối thiểu:
 {
   "device_id": "main-station-01",
   "temperature": 31.5,
-  "humidity": 72.4,
-  "gas_raw": 1380,
+  "humidity": 72.4
+}
+```
+
+Các field tùy chọn, hữu ích khi test bằng Swagger/Postman:
+
+```json
+{
+  "gas_average": 1380,
   "distance_cm": null,
   "water_level_cm": null,
   "f7_roll": 1.2,
@@ -50,14 +57,14 @@ Body tối thiểu:
   "f7_tilt": 3.1,
   "f7_vibration": 0.25,
   "f7_impact": 0.8,
-  "f7_status": "NORMAL",
+  "f7_status": "SAFE",
   "status": "DANGER",
   "buzzer": false,
   "buzzer_muted": true
 }
 ```
 
-`temperature` và `humidity` là bắt buộc trong biểu mẫu giai đoạn 1. Backend tạo thiết bị nếu `device_id` chưa tồn tại và lưu thời gian UTC.
+`temperature` và `humidity` là bắt buộc. Endpoint POST được giữ để integration test hoặc nhập thử bằng Swagger/Postman; luồng runtime thật nhận dữ liệu qua MQTT. Backend lưu thời gian UTC.
 
 `distance_cm` và `water_level_cm` nhận `null` khi JSN-SR04T không có echo. `status`,
 `buzzer` và `buzzer_muted` độc lập với nhau, vì vậy DANGER + buzzer OFF + muted là hợp lệ.
@@ -97,8 +104,10 @@ và đưa kết quả vào model AI:
 }
 ```
 
-`system_prediction` là `NORMAL`, `WARNING`, `DANGER` hoặc `INSUFFICIENT_DATA`.
+`system_prediction` là `SAFE`, `WARNING`, `DANGER` hoặc `INSUFFICIENT_DATA`.
 Field 6 không được đưa vào model vì nó đã chứa kết quả trạng thái do ESP32 tính. Model Random Forest tiếp tục dùng cảm biến môi trường của Main; xu hướng F7 được kiểm tra theo ngưỡng và kết hợp vào `system_prediction`.
+
+Backend xử lý F5 theo hai bước: ngoại suy các đại lượng vật lý đến thời điểm +5 phút, sau đó đưa `temperature`, `gas_average`, `water_level_cm` vào Random Forest classifier. Field 5 và Field 6 là category nên giữ giá trị mới nhất, không ngoại suy tuyến tính.
 
 ## `GET /api/readings/thingspeak-history`
 

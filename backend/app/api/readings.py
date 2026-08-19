@@ -71,14 +71,6 @@ def thingspeak_history() -> dict:
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Không thể tải lịch sử dữ liệu từ ThingSpeak.",
         ) from error
-    except (httpx.HTTPError, ValueError) as error:
-        logger.warning("Cannot read ThingSpeak trend data: %s", error)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Không thể dự đoán dữ liệu từ ThingSpeak.",
-        ) from error
-
-
 @router.post("", response_model=SensorReadingResponse, status_code=status.HTTP_201_CREATED)
 def add_reading(
     payload: SensorReadingCreate,

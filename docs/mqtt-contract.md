@@ -1,284 +1,137 @@
 # MQTT Contract — Disaster Warning Station
 
-Tài liệu này mô tả đúng dữ liệu đang được firmware, backend và frontend sử dụng.
+Tài liệu này là contract duy nhất giữa hai firmware và backend. Không có alias field cũ.
 
-## 1. Quy ước chung
+## Quy ước
 
-- Topic gốc: `disaster`
-- QoS đang dùng: `1`
-- Telemetry gửi định kỳ và không retain.
-- Trạng thái online/offline và trạng thái còi được retain.
-- Lệnh điều khiển còi không được retain để ESP32 không nhận lại lệnh cũ sau khi khởi động.
-- ESP32 Main là nơi duy nhất quyết định trạng thái nguy hiểm và điều khiển còi.
-- Backend và AI chỉ nhận, lưu, dự đoán và hiển thị dữ liệu; không tự bật còi.
+- Topic gốc: `disaster`.
+- Telemetry/state F7 dùng `SAFE`, `WARNING`, `DANGER`.
+- Telemetry định kỳ không retain; status và buzzer state được retain.
+- ESP32 Main là nơi quyết định system, LED và buzzer. Backend/AI chỉ lưu, dự đoán, thông báo và hiển thị.
+- UDP fallback chỉ giữ cảnh báo local F7 → Main; backend không nhận biết trạng thái “direct”.
 
-## 2. Danh sách topic
+## Topic, QoS và retain
 
-| Topic | Nơi gửi | Nơi nhận | Payload | Retain |
-|---|---|---|---|---|
-| `disaster/main/telemetry` | ESP32 Main | Backend | JSON | Không |
-| `disaster/main/status` | ESP32 Main | Backend | `online` / `offline` | Có |
-| `disaster/main/command/buzzer` | Backend | ESP32 Main | `ON` / `OFF` | Không |
-| `disaster/main/state/buzzer` | ESP32 Main | Backend | `ON` / `OFF` | Có |
-| `disaster/f7/telemetry` | ESP32 F7 | Backend | JSON | Không |
-| `disaster/f7/state` | ESP32 F7 | ESP32 Main | `NORMAL` / `WARNING` / `DANGER` | Có |
-| `disaster/f7/status` | ESP32 F7 | Backend | `online` / `offline` | Có |
-| `disaster/backend/status` | Backend | Broker/client khác | JSON online/offline | Có |
+| Topic | Publisher → Subscriber | Payload | QoS thực tế | Retain |
+|---|---|---|---:|---:|
+| `disaster/main/telemetry` | Main → Backend | JSON | 0 | Không |
+| `disaster/main/status` | Main → Backend | `online` / Last Will `offline` | publish 0; Last Will 1 | Có |
+| `disaster/main/command/buzzer` | Backend → Main | `ON` / `OFF` | 1; Main subscribe QoS 1 | Không |
+| `disaster/main/state/buzzer` | Main → Backend | `ON` / `OFF` | 0 | Có |
+| `disaster/f7/telemetry` | F7 → Backend | JSON | 0 | Không |
+| `disaster/f7/state` | F7 → Main | `SAFE` / `WARNING` / `DANGER` | 0 | Có |
+| `disaster/f7/status` | F7 → Backend | `online` / Last Will `offline` | publish 0; Last Will 1 | Có |
+| `disaster/backend/status` | Backend → client khác | JSON online/offline | 1 | Có |
 
-## 3. Telemetry của ESP32 Main
+PubSubClient publish không truyền QoS nên các publish thông thường của firmware là QoS 0. Không mô tả tất cả topic là QoS 1.
 
-Topic:
+## Main telemetry
 
-```text
-disaster/main/telemetry
-```
-
-Payload hiện tại:
+Topic `disaster/main/telemetry`:
 
 ```json
 {
+  "deviceId": "main-station-01",
   "temperature": 33.2,
   "humidity": 69.3,
   "gas": 942,
   "distanceCm": 51.4,
   "waterLevelCm": 48.6,
   "motion": "SAFE",
-  "motionSource": "MQTT",
-  "motionRoll": 1.2,
-  "motionPitch": 2.1,
-  "motionTilt": 3.0,
-  "motionVibration": 0.2,
-  "motionImpact": 0.3,
   "system": "DANGER",
   "buzzer": false,
   "buzzerMuted": true
 }
 ```
 
-Ý nghĩa các trường:
+| Field | Ý nghĩa |
+|---|---|
+| `deviceId` | ID cố định của Main |
+| `temperature`, `humidity` | DHT11 |
+| `gas` | trung bình 5 mẫu ADC MQ-2; không phải ppm |
+| `distanceCm`, `waterLevelCm` | phép đo JSN-SR04T hoặc `null` khi không có echo |
+| `motion` | trạng thái F7 mà Main nhận để tính system |
+| `system` | mức cao nhất của temperature/gas/water/motion |
+| `buzzer` | trạng thái phần cứng thật |
+| `buzzerMuted` | người dùng đã tắt tiếng alarm event hiện tại |
 
-| Trường | Kiểu dữ liệu | Ý nghĩa |
-|---|---|---|
-| `temperature` | number | Nhiệt độ từ DHT |
-| `humidity` | number | Độ ẩm từ DHT |
-| `gas` | number | Giá trị ADC đã lấy trung bình từ MQ-2 |
-| `distanceCm` | number hoặc null | Khoảng cách từ cảm biến đến mặt nước |
-| `waterLevelCm` | number hoặc null | Mực nước tính từ đáy |
-| `motion` | string | Mức chuyển động do F7 gửi sang |
-| `motionSource` | string | `MQTT`, `DIRECT` hoặc `NONE` |
-| `motionRoll`, `motionPitch` | number | Góc F7 nhận qua UDP local |
-| `motionTilt` | number | Độ lệch nghiêng của F7 |
-| `motionVibration`, `motionImpact` | number | Mức rung và va chạm của F7 |
-| `system` | string | Trạng thái tổng hợp: `SAFE`, `WARNING`, `DANGER` |
-| `buzzer` | boolean | Trạng thái thật của còi |
-| `buzzerMuted` | boolean | Sự kiện cảnh báo hiện tại đã bị tắt tiếng hay chưa |
+Main không publish roll/pitch/tilt/vibration/impact. Backend nhận chi tiết trực tiếp từ topic F7; dữ liệu UDP là local-only. Backend từ chối payload Main thiếu field bắt buộc thay vì tạo số 0 giả.
 
-Khi cảm biến nước không nhận được echo, ESP32 phải gửi:
+Ba trạng thái này độc lập và hoàn toàn hợp lệ:
 
 ```json
-{
-  "distanceCm": null,
-  "waterLevelCm": null
-}
+{ "system": "DANGER", "buzzer": false, "buzzerMuted": true }
 ```
 
-Backend và database phải giữ nguyên `null`. Không được đổi thành `0`, vì `0` là một giá trị đo có ý nghĩa khác.
+## Alarm Event Mute
 
-Ba trạng thái sau độc lập với nhau:
-
-```json
-{
-  "system": "DANGER",
-  "buzzer": false,
-  "buzzerMuted": true
-}
-```
-
-Payload trên hoàn toàn hợp lệ: hệ thống vẫn nguy hiểm nhưng người dùng đã tắt tiếng sự kiện hiện tại.
-
-## 4. Logic Alarm Event Mute
-
-ESP32 Main xử lý theo bảng sau:
-
-| Trạng thái hệ thống | `buzzerMuted` | Kết quả còi |
+| System | `buzzerMuted` | Buzzer |
 |---|---:|---|
-| `SAFE` | bất kỳ | Tắt còi và đặt lại mute thành `false` |
-| `WARNING` | giữ nguyên | Tắt còi |
-| `DANGER` | `false` | Bật còi |
-| `DANGER` | `true` | Tắt còi |
+| `SAFE` | tự reset `false` | OFF |
+| `WARNING` | giữ nguyên | OFF |
+| `DANGER` | `false` | ON |
+| `DANGER` | `true` | OFF |
 
-Lệnh `OFF`:
+`OFF` chỉ mute sự kiện DANGER hiện tại. `ON` xóa mute và chỉ làm còi kêu nếu system vẫn DANGER. Command không retain để không phát lại sau reboot.
 
-- Nếu đang `DANGER`: đặt `buzzerMuted = true` và tắt còi.
-- Nếu không phải `DANGER`: không tạo mute kéo dài sang sự kiện sau.
+## F7 telemetry và state
 
-Lệnh `ON`:
-
-- Xóa mute bằng cách đặt `buzzerMuted = false`.
-- Chỉ bật còi nếu hệ thống vẫn đang `DANGER`.
-- Không được ép còi bật khi hệ thống là `SAFE` hoặc `WARNING`.
-
-Khi hệ thống trở về `SAFE`, ESP32 xóa mute. Vì vậy một sự kiện `DANGER` mới vẫn có thể bật còi.
-
-## 5. Điều khiển còi từ website
-
-Frontend không gửi MQTT trực tiếp. Luồng xử lý là:
-
-```text
-Frontend
-  -> POST /api/devices/main/buzzer
-  -> Backend
-  -> disaster/main/command/buzzer
-  -> ESP32 Main
-```
-
-Payload MQTT chỉ là một trong hai chuỗi:
-
-```text
-ON
-```
-
-```text
-OFF
-```
-
-Topic lệnh phải dùng `retain = false`.
-
-## 6. Trạng thái thật của còi
-
-Topic:
-
-```text
-disaster/main/state/buzzer
-```
-
-Payload:
-
-```text
-ON
-```
-
-hoặc:
-
-```text
-OFF
-```
-
-ESP32 gửi topic này sau khi trạng thái còi thật thay đổi và sau khi kết nối lại MQTT. Topic này có thể retain để backend mới kết nối biết trạng thái gần nhất.
-
-Backend chỉ cập nhật `Buzzer State` từ topic này hoặc từ telemetry. Backend không được suy luận rằng `system = DANGER` thì chắc chắn còi đang bật.
-
-## 7. Trạng thái online/offline
-
-ESP32 Main:
-
-```text
-disaster/main/status
-```
-
-ESP32 F7:
-
-```text
-disaster/f7/status
-```
-
-Payload:
-
-```text
-online
-```
-
-hoặc:
-
-```text
-offline
-```
-
-Các topic này dùng retain và Last Will để backend nhận biết thiết bị mất kết nối.
-
-## 8. Telemetry và state của ESP32 F7
-
-F7 tiếp tục dùng payload hiện có. Backend chấp nhận các trường chuyển động như:
+Topic `disaster/f7/telemetry`:
 
 ```json
 {
-  "deviceId": "f7-01",
+  "deviceId": "f7-station-01",
   "roll": 1.2,
   "pitch": 2.1,
   "tilt": 3.0,
   "vibration": 0.2,
   "impact": 0.3,
-  "status": "NORMAL"
+  "status": "SAFE"
 }
 ```
 
-F7 gửi trạng thái cần thiết qua `disaster/f7/state` để ESP32 Main tổng hợp vào trường `motion` và `system`.
+F7 đồng thời publish `SAFE`, `WARNING` hoặc `DANGER` lên `disaster/f7/state` để Main tổng hợp local safety.
 
-Ngoài MQTT, F7 luôn tạo Wi-Fi `DISASTER_F7_DIRECT`. Khi Main mất Wi-Fi nhà, Main kết nối vào mạng này và nghe UDP cổng `4210`. Payload local là một dòng CSV đơn giản:
+Backend cache telemetry chi tiết tối đa 10 giây. Khi xử lý một Main telemetry:
+
+- F7 còn fresh: ghi các giá trị vào `f7_*`;
+- F7 thiếu hoặc stale: ghi toàn bộ `f7_* = null`;
+- `motion` của Main vẫn dùng cho ThingSpeak Field 5 nhưng không được ghi thay cho `f7_status`.
+
+Khi Main offline, F7 không tạo row PostgreSQL riêng. Backend vẫn có thể gửi `vibration` lên ThingSpeak Field 7. Để tránh hai Pushsafer cho cùng một sự kiện, Main system DANGER chịu trách nhiệm notification khi Main còn online; F7 chỉ tự notification khi Main đã mất telemetry mới.
+
+## UDP fallback local
+
+F7 luôn tạo AP `DISASTER_F7_DIRECT`. Khi mất Home Wi-Fi, Main ngắt MQTT, kết nối AP và nhận UDP cổng `4210`:
 
 ```text
 STATUS,ROLL,PITCH,TILT,VIBRATION,IMPACT
 ```
 
-Ví dụ:
+Fallback duy trì LED/buzzer local. Backend/web/cloud có thể mất live data cho đến khi MQTT hoạt động lại.
 
-```text
-WARNING,1.2,2.1,12.0,1.35,2.10
-```
+## Mapping lưu trữ
 
-Đường UDP chỉ phục vụ cảnh báo local giữa F7 và Main. MQTT vẫn là đường đưa dữ liệu lên backend và website.
-
-Khi backend nhận `disaster/f7/telemetry`, dữ liệu được:
-
-1. giữ làm dữ liệu F7 mới nhất để ghép vào bản ghi `sensor_readings` tiếp theo;
-2. gửi độ rung lên Field 7 của channel ThingSpeak chung tối đa 15 giây/lần; nếu Main offline thì bản ghi Cloud chỉ có Field 7;
-3. dùng Field 5 và Field 7 để dự đoán trạng thái hệ thống sau 5 phút;
-4. cập nhật API thời gian thực `/api/devices/f7/latest`.
-
-## 9. Lưu dữ liệu
-
-Backend đổi tên camelCase từ ESP32 sang snake_case khi lưu:
-
-| ESP32 | PostgreSQL | ThingSpeak |
+| MQTT | PostgreSQL | ThingSpeak |
 |---|---|---|
-| `distanceCm` | `distance_cm` | Không gửi |
-| `waterLevelCm` | `water_level_cm` | Field 4 |
-| F7 `roll` | `f7_roll` | Không gửi |
-| F7 `pitch` | `f7_pitch` | Không gửi |
-| F7 `tilt` | `f7_tilt` | Không gửi |
-| F7 `vibration` | `f7_vibration` | Field 7 |
-| F7 `impact` | `f7_impact` | Không gửi |
-| F7 `status` | `f7_status` | Field 5: SAFE=0, WARNING=1, DANGER=2 |
-| `system` | `status` | Field 6: SAFE=0, WARNING=1, DANGER=2 |
-| `buzzer` | `buzzer` | Không gửi |
-| `buzzerMuted` | `buzzer_muted` | Không gửi |
+| Main `gas` | `gas_average` | Field 3 |
+| Main `waterLevelCm` | `water_level_cm` | Field 4 |
+| Main `motion` | không lưu riêng | Field 5: SAFE=0, WARNING=1, DANGER=2 |
+| Main `system` | `status` | Field 6: SAFE=0, WARNING=1, DANGER=2 |
+| F7 `roll/pitch/tilt/vibration/impact/status` | `f7_*` | vibration ở Field 7 |
+| Main `buzzer`, `buzzerMuted` | `buzzer`, `buzzer_muted` | không gửi |
 
-ThingSpeak còn dùng Field 1 cho nhiệt độ, Field 2 cho độ ẩm và Field 3 cho gas. Backend giới hạn một lần gửi mỗi 15 giây. Nếu PostgreSQL hoặc ThingSpeak lỗi, MQTT control vẫn hoạt động độc lập.
+Field 1 là temperature, Field 2 là humidity. Backend giới hạn upload ThingSpeak tối đa một lần mỗi 15 giây.
 
-## 10. Quy tắc cho AI
+## AI/F5
 
-Mô hình hiện tại chỉ dùng dữ liệu cảm biến:
+F5 gồm hai bước:
 
 ```text
-temperature
-humidity
-gas_filtered
-water_danger
+20 mẫu ThingSpeak → ngoại suy đại lượng vật lý đến +5 phút
+                    → Random Forest classifier
+                    → kết hợp ngưỡng F7
+                    → SAFE / WARNING / DANGER
 ```
 
-AI không dùng `system`, `buzzer` hoặc `buzzerMuted` làm feature. AI chỉ dự đoán rủi ro và tuyệt đối không publish lệnh `ON` cho còi.
-
-Nếu dữ liệu nước là `null`, backend bỏ qua lần dự đoán đó và báo `insufficient_data`. Không được đổi `null` thành `0`.
-
-## 11. Các trường hợp cần kiểm tra khi demo
-
-1. `SAFE` -> còi tắt, mute được xóa.
-2. `DANGER` mới -> còi bật.
-3. Nhấn tắt tiếng trong `DANGER` -> hệ thống vẫn `DANGER`, còi tắt, mute là `true`.
-4. Telemetry `DANGER` lặp lại -> còi vẫn tắt nếu đã mute.
-5. `DANGER -> WARNING -> DANGER` khi chưa về `SAFE` -> mute vẫn được giữ.
-6. `DANGER -> SAFE -> DANGER` -> mute được xóa ở `SAFE`, sự kiện mới bật còi.
-7. Nhấn `ON` khi `SAFE` -> xóa mute nhưng không bật còi.
-8. Cảm biến nước lỗi -> API và PostgreSQL giữ `null`; backend bỏ qua Field 4 khi gửi ThingSpeak.
-
-Đây là contract hiện tại. Nếu thay đổi tên trường hoặc topic, phải cập nhật đồng thời firmware, backend, frontend và tài liệu này.
+Model dùng `temperature`, `gas_average`, `water_level_cm`. Field 5 và 6 là category nên giữ giá trị mới nhất, không ngoại suy tuyến tính. AI không dùng `system`, buzzer hoặc mute làm feature và không publish lệnh bật còi.

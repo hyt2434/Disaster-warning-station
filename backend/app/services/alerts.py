@@ -58,7 +58,7 @@ def build_main_danger_message(sensor_record: dict) -> str:
     _add_danger_value(
         causes,
         "Khói / gas",
-        sensor_record.get("gas_filtered"),
+        sensor_record.get("gas_average"),
         "ADC",
         GAS_DANGER,
     )
@@ -80,21 +80,21 @@ def build_main_danger_message(sensor_record: dict) -> str:
         _add_danger_value(
             causes,
             "Độ nghiêng F7",
-            sensor_record.get("motion_tilt"),
+            sensor_record.get("f7_tilt"),
             "độ",
             TILT_DANGER,
         )
         _add_danger_value(
             causes,
             "Độ rung F7",
-            sensor_record.get("motion_vibration"),
+            sensor_record.get("f7_vibration"),
             "m/s²",
             VIBRATION_DANGER,
         )
         _add_danger_value(
             causes,
             "Va đập F7",
-            sensor_record.get("motion_impact"),
+            sensor_record.get("f7_impact"),
             "m/s²",
             IMPACT_DANGER,
         )
@@ -173,9 +173,9 @@ class AlertService:
     ) -> bool:
         normalized_status = current_status.upper()
 
-        # SAFE/NORMAL ends the current alarm event. WARNING does not send a
+        # SAFE ends the current alarm event. WARNING does not send a
         # phone notification and does not reset an existing DANGER event.
-        if normalized_status in {"SAFE", "NORMAL"}:
+        if normalized_status == "SAFE":
             self._danger_active_by_source[source] = False
             return False
 

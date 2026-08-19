@@ -5,12 +5,12 @@ const functions = [
   ['F4', 'ThingSpeak lưu lịch sử Cloud và hiển thị chart trên web'],
   ['F5', 'ThingSpeak + model AI dự đoán trạng thái sau 5 phút'],
   ['F6', 'JSN-SR04T: đo mực nước và cảnh báo ba LED'],
-  ['F7', 'MPU6050: rung/nghiêng, thông báo trình duyệt và Pushsafer'],
+  ['F7', 'MPU6050: rung/nghiêng + Pushsafer alert'],
   ['F8', 'Website quản lý và trạng thái các kết nối'],
 ];
 
 function getStatusTone(value) {
-  if (['online', 'connected', 'available', 'safe', 'normal', 'off', 'ready'].includes(value)) {
+  if (['online', 'connected', 'available', 'safe', 'off', 'ready', 'not_muted'].includes(value)) {
     return 'normal';
   }
 
@@ -32,7 +32,8 @@ function displayStatus(value) {
     not_run: 'CHƯA DỰ ĐOÁN',
     insufficient_data: 'THIẾU DỮ LIỆU',
     muted: 'ĐÃ TẮT TIẾNG',
-    ready: 'CHƯA TẮT TIẾNG',
+    ready: 'SẴN SÀNG',
+    not_muted: 'CHƯA TẮT TIẾNG',
     unknown: 'CHƯA XÁC ĐỊNH',
   };
 
@@ -45,7 +46,7 @@ function getMuteState(buzzerMuted) {
   }
 
   if (buzzerMuted === false) {
-    return 'ready';
+    return 'not_muted';
   }
 
   return 'unknown';

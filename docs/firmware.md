@@ -40,8 +40,8 @@ Sensors / Outputs
                +----------+-----------+
                |          |           |
                v          v           v
-            Frontend   Cloud DB   Notification
-                        / AI-DS     / Push service
+            Frontend  PostgreSQL  ThingSpeak / AI
+                                      + Pushsafer
 ```
 
 ---
@@ -52,14 +52,11 @@ Sensors / Outputs
 firmware/
 ├── main_station/
 │   └── main_station.ino
-├── f7_station/
-│   └── f7_station.ino
-└── tools/
-    ├── connect_wifi_main.cpp
-    └── connect_wifi_c3.cpp
+└── f7_station/
+    └── f7_station.ino
 ```
 
-Hai firmware được upload riêng cho từng board. Các file trong `tools/` chỉ dùng để kiểm tra kết nối Wi-Fi/MQTT độc lập.
+Hai firmware được upload riêng cho từng board.
 
 ---
 
@@ -71,7 +68,7 @@ Hai firmware được upload riêng cho từng board. Các file trong `tools/` c
 |---|---|---|
 | F1 | DHT11 | Nhiệt độ + độ ẩm |
 | F2 | Buzzer | Tự động theo DANGER + mute sự kiện hiện tại từ web/MQTT |
-| F3 | MQ-2 | ADC raw + moving average + trạng thái gas |
+| F3 | MQ-2 | ADC raw + trung bình 5 mẫu + trạng thái gas |
 | F6 | JSN-SR04T + LED | Khoảng cách -> mực nước -> 3 cấp LED |
 | Network | Wi-Fi + MQTT | Telemetry, command, online/offline |
 
@@ -125,8 +122,7 @@ DHT11
   +--> humidity
 ```
 
-Nếu đọc lỗi `NaN`, firmware không crash, tạm xếp mức nhiệt độ về `SAFE` cho bản demo
-và tự thử lại ở chu kỳ tiếp theo.
+Nếu đọc lỗi `NaN`, firmware giữ giá trị và mức an toàn hợp lệ gần nhất rồi tự thử lại ở chu kỳ tiếp theo. Firmware không biến một phép đo lỗi thành `SAFE` giả.
 
 ---
 
@@ -144,7 +140,7 @@ analogRead(GPIO5)
 Average (5 samples)
       |
       v
- gasFiltered
+    gasAverage
       |
       v
 Compare with demo thresholds
@@ -156,7 +152,7 @@ Compare with demo thresholds
 
 Firmware **không gọi dữ liệu là ppm**, vì chưa có calibration khí chuẩn.
 
-Serial Monitor in cả 5 mẫu và giá trị trung bình để hỗ trợ calibration.
+Serial Monitor in raw sample cuối và giá trị trung bình để hỗ trợ calibration.
 
 ### Ngưỡng mặc định trong code
 
@@ -192,9 +188,9 @@ distance           = 65 cm
 waterLevel         = 35 cm
 ```
 
-Nếu không nhận được echo, firmware đánh dấu phép đo không hợp lệ, tạm xếp cảm biến nước
-về `SAFE` cho bản demo và publish `distanceCm: null`, `waterLevelCm: null`. Giá trị `null`
-không được backend đổi thành `0`. Khoảng cách nhỏ hơn `23 cm` được clamp về `23 cm`,
+Nếu không nhận được echo, firmware đánh dấu phép đo không hợp lệ, giữ mức an toàn hợp lệ gần nhất
+và publish `distanceCm: null`, `waterLevelCm: null`. Giá trị `null` không được backend đổi
+thành `0`. Khoảng cách nhỏ hơn `23 cm` được clamp về `23 cm`,
 tương ứng mức nước tối đa đo được là `77 cm`.
 
 ### Trạng thái LED
@@ -266,8 +262,7 @@ ON
 OFF
 ```
 
-Code cũng chấp nhận alias `MUTE/UNMUTE`, `1/0` và `TRUE/FALSE`, nhưng backend chỉ gửi
-`ON` hoặc `OFF`. Command không được publish retained.
+Firmware chỉ chấp nhận `ON` hoặc `OFF`. Command không được publish retained.
 
 ### Publish telemetry
 
@@ -279,6 +274,7 @@ Ví dụ:
 
 ```json
 {
+  "deviceId": "main-station-01",
   "temperature": 30.2,
   "humidity": 68.0,
   "gas": 1120,
@@ -324,7 +320,7 @@ MPU6050
   |
   +--> đọc nhóm 20 mẫu mỗi 2 giây
   +--> tính roll, pitch, tilt, vibration, impact
-  +--> lấy mức cao nhất: NORMAL / WARNING / DANGER
+  +--> lấy mức cao nhất: SAFE / WARNING / DANGER
   +--> MQTT -> Main, backend và web
   +--> UDP local -> Main khi Main kết nối Wi-Fi của F7
 ```
@@ -353,9 +349,11 @@ Khi MPU6050 khởi động:
 5. firmware tính:
    - baseline roll;
    - baseline pitch;
-   - baseline acceleration magnitude.
+   - không dùng baseline acceleration cho vibration/impact.
 
 Nhờ vậy, node có thể được lắp ở một orientation không hoàn toàn bằng phẳng mà vẫn đo độ nghiêng **so với tư thế ban đầu**.
+
+Nếu `mpu.begin()` thất bại, firmware ghi lỗi nhưng vẫn khởi động Wi-Fi/AP/MQTT. F7 chỉ đọc và publish motion sau khi MPU được tìm thấy và calibration hợp lệ; không còn vòng `while` vô hạn chặn toàn bộ network.
 
 ---
 
@@ -374,7 +372,7 @@ Ngưỡng mặc định:
 
 | State | Điều kiện |
 |---|---:|
-| NORMAL | nhỏ hơn 15 deg |
+| SAFE | nhỏ hơn 15 deg |
 | WARNING | từ 15 deg |
 | DANGER | từ 30 deg |
 
@@ -387,13 +385,13 @@ Ngưỡng mặc định:
 Firmware không dùng một raw sample đơn lẻ mà phân tích 20 mẫu liên tiếp.
 
 ```text
-A = sqrt(ax^2 + ay^2 + az^2)
+A = sqrt(ax^2 + ay^2 + az^2) cho 20 mẫu
         |
         v
-A - baselineA
+averageA của nhóm hiện tại
         |
         v
-Độ lệch trung bình của 20 samples
+trung bình abs(A - averageA)
         |
         v
 vibration
@@ -403,7 +401,7 @@ Ngưỡng mặc định:
 
 | State | Điều kiện |
 |---|---:|
-| NORMAL | nhỏ hơn 0.80 m/s^2 |
+| SAFE | nhỏ hơn 0.80 m/s^2 |
 | WARNING | từ 0.80 m/s^2 |
 | DANGER | từ 2.00 m/s^2 |
 
@@ -420,13 +418,7 @@ sau đó mới chốt threshold cuối.
 
 ## 17. Impact
 
-Firmware tính:
-
-```text
-impactDelta = abs(accelerationMagnitude - baselineAccelerationMagnitude)
-```
-
-Nếu:
+Firmware tính độ lệch `abs(A - averageA)` của 20 mẫu và chọn độ lệch lớn thứ hai để bỏ qua một spike nhiễu đơn lẻ. Nếu:
 
 ```text
 impactDelta >= 8 m/s^2
@@ -440,7 +432,7 @@ Ngưỡng này cũng phải hiệu chỉnh bằng thử nghiệm va chạm thự
 
 ## 18. Alert F7
 
-F7 publish trạng thái `NORMAL`, `WARNING` hoặc `DANGER` lên `disaster/f7/state`. Backend nhận telemetry F7, sau đó mới quyết định gửi Pushsafer. API key notification không nằm trong ESP.
+F7 publish trạng thái `SAFE`, `WARNING` hoặc `DANGER` lên `disaster/f7/state`. Backend nhận telemetry F7, sau đó mới quyết định gửi Pushsafer. API key notification không nằm trong ESP.
 
 ---
 
@@ -464,27 +456,17 @@ Ví dụ:
   "tilt": 3.0,
   "vibration": 0.12,
   "impact": 0.15,
-  "status": "NORMAL"
+  "status": "SAFE"
 }
 ```
 
 ---
 
-## 20. Battery F7 - không được hiển thị % giả
+## 20. Battery F7
 
 Với wiring hiện tại, pin 18650 chỉ cấp nguồn vào chân battery của XIAO; **không có mạch đo điện áp pin nối về ADC**.
 
-Vì vậy firmware cố ý gửi:
-
-```json
-{
-  "batterySupported": false,
-  "batteryVoltage": null,
-  "batteryPercent": null
-}
-```
-
-Nếu muốn F8 hiển thị pin thật, cần bổ sung mạch chia áp từ battery sang một chân ADC còn trống rồi mới viết phần đo điện áp và ánh xạ sang phần trăm.
+Firmware hiện không gửi field battery vì chưa có mạch đo điện áp nối vào ADC. Nếu muốn F8 hiển thị pin thật, cần bổ sung mạch chia áp từ battery sang một chân ADC còn trống rồi mới viết phần đo điện áp và ánh xạ sang phần trăm.
 
 ---
 
@@ -495,7 +477,6 @@ Nếu muốn F8 hiển thị pin thật, cần bổ sung mạch chia áp từ ba
 ### Cả hai ESP
 
 - `PubSubClient`
-- `ArduinoJson` **7.x**
 
 ### ESP32-S3 Main
 
@@ -517,8 +498,8 @@ ESP32 board package: `esp32` by Espressif Systems.
 Trong **cả hai** firmware, sửa:
 
 ```cpp
-const char* WIFI_SSID = "YOUR_WIFI_SSID";
-const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
+const char* HOME_WIFI_SSID = "YOUR_WIFI_SSID";
+const char* HOME_WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 
 const char* MQTT_HOST = "192.168.1.100";
 const uint16_t MQTT_PORT = 1883;
@@ -596,16 +577,13 @@ Cần chốt bằng dữ liệu thật:
 MAIN
 - SENSOR_HEIGHT_CM
 - MIN_VALID_DISTANCE_CM
-- GAS_WARNING_ENTER / EXIT
-- GAS_DANGER_ENTER / EXIT
-- WATER_WARNING_DISTANCE_CM
-- WATER_DANGER_DISTANCE_CM
+- GAS_WARNING / GAS_DANGER
+- WATER_WARNING_CM / WATER_DANGER_CM
 
 F7
 - TILT_WARNING_DEGREES / TILT_DANGER_DEGREES
 - VIBRATION_WARNING / VIBRATION_DANGER
 - IMPACT_DANGER
-- IMPACT_DELTA_THRESHOLD
 ```
 
 Nên lưu bảng calibration vào báo cáo để chứng minh ngưỡng không được chọn ngẫu nhiên.
@@ -640,7 +618,7 @@ SAFE             -> clear mute for the next event
 ### F7
 
 ```text
-READ 5 MPU6050 SAMPLES
+READ 20 MPU6050 SAMPLES
         |
         v
 AVERAGE / COMPARE WITH BASELINE
@@ -649,7 +627,7 @@ AVERAGE / COMPARE WITH BASELINE
 Tilt + Vibration + Impact
         |
         v
-NORMAL / WARNING / DANGER
+SAFE / WARNING / DANGER
         |
         +------> MQTT telemetry every 2 seconds
         +------> UDP local every 2 seconds when Main joins F7 AP

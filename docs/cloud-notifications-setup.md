@@ -15,7 +15,7 @@ Backend là nơi kết nối hai dịch vụ Cloud. ESP32 chỉ gửi telemetry 
 |---|---|---|
 | Field 1 | Temperature | Nhiệt độ (°C) |
 | Field 2 | Humidity | Độ ẩm (%) |
-| Field 3 | Gas Level | Giá trị MQ-2 đã lọc |
+| Field 3 | Gas Average | Trung bình 5 mẫu ADC MQ-2 |
 | Field 4 | Water Level | Mực nước (cm) |
 | Field 5 | Motion Status | SAFE = 0, WARNING = 1, DANGER = 2 |
 | Field 6 | System Status | SAFE = 0, WARNING = 1, DANGER = 2 |
@@ -57,7 +57,7 @@ Invoke-RestMethod -Method Post -Uri "https://api.thingspeak.com/update.json" -Bo
 
 Nếu thành công, ThingSpeak trả về bản ghi mới. Nếu bị từ chối, kiểm tra Write API Key và chờ đủ 15 giây trước lần gửi tiếp theo.
 
-Frontend F5 không đọc API key trực tiếp. Backend dùng Channel ID và Read API Key để lấy 20 bản ghi gần nhất. Field 1–4 đi vào model AI; Field 5 và Field 7 giúp kiểm tra xu hướng chuyển động và rung F7 sau 5 phút. Sau đó backend tổng hợp thành một kết quả toàn hệ thống.
+Frontend F5 không đọc API key trực tiếp. Backend dùng Channel ID và Read API Key để lấy 20 bản ghi gần nhất. Backend ngoại suy Field 1, 3, 4 và 7 đến +5 phút; Field 5/6 là category nên giữ giá trị mới nhất. Model dùng temperature, gas average và water level, sau đó backend kết hợp ngưỡng F7 thành kết quả toàn hệ thống.
 
 Frontend F4 cho phép chọn biểu đồ Field 1–7 của cùng một channel. ESP32 và monitor
 local cập nhật mỗi 2 giây; biểu đồ ThingSpeak cập nhật khoảng 15 giây/lần theo giới hạn Cloud.
@@ -85,9 +85,9 @@ Nếu chỉ gửi tới một điện thoại, thay `a` bằng Device ID, ví d�
 | Nguồn | Khi nào gửi |
 |---|---|
 | ESP32 Main | `system_status` chuyển sang `DANGER` |
-| ESP32 F7 | `status` chuyển sang `DANGER` |
+| ESP32 F7 | `status` chuyển sang `DANGER` khi Main không còn telemetry mới |
 
-`WARNING` chỉ hiển thị trên website và đèn vàng, không gửi Pushsafer. Backend không gửi lặp lại khi ESP32 liên tục gửi `DANGER`. Sau khi thiết bị trở về `SAFE/NORMAL`, sự kiện `DANGER` tiếp theo mới gửi một thông báo mới.
+`WARNING` chỉ hiển thị trên website và đèn vàng, không gửi Pushsafer. Backend không gửi lặp lại khi ESP32 liên tục gửi `DANGER`. Sau khi thiết bị trở về `SAFE`, sự kiện `DANGER` tiếp theo mới gửi một thông báo mới. Khi Main online, notification chung từ Main đại diện cả motion F7 để tránh gửi trùng hai lần.
 
 Nội dung thông báo chỉ liệt kê dữ liệu đạt ngưỡng nguy hiểm:
 

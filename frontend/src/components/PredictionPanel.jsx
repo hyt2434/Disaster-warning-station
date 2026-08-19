@@ -1,5 +1,5 @@
 const PREDICTION_CONTENT = {
-  NORMAL: {
+  SAFE: {
     label: 'DỰ ĐOÁN AN TOÀN',
     description: 'Các dữ liệu dự báo sau 5 phút vẫn nằm trong giới hạn an toàn.',
     tone: 'normal',
@@ -111,7 +111,7 @@ export function PredictionPanel({ cloudPrediction, predictionError }) {
             </div>
           )}
 
-          {predictionStatus === 'NORMAL' && (
+          {predictionStatus === 'SAFE' && (
             <div className="prediction-safe-note">
               Không có nhiệt độ, gas, mực nước hoặc chuyển động nào được dự đoán vượt ngưỡng cảnh báo.
             </div>
@@ -119,7 +119,7 @@ export function PredictionPanel({ cloudPrediction, predictionError }) {
 
           <p className="prediction-explanation">
             Backend lấy dữ liệu lịch sử ThingSpeak, ước lượng giá trị sau 5 phút và đưa
-            nhiệt độ, độ ẩm, gas, mực nước vào model được tạo bởi thư mục ai.
+            nhiệt độ, gas trung bình và mực nước vào model được tạo bởi thư mục ai.
             Field 5 thể hiện trạng thái chuyển động F7 và Field 7 thể hiện độ rung F7.
             Hai dữ liệu này cũng được kiểm tra trước khi tạo kết quả chung của toàn hệ thống.
           </p>

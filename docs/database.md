@@ -1,45 +1,36 @@
 # Cơ sở dữ liệu PostgreSQL
 
-## Hai bảng đang dùng
+## Schema hiện tại
 
-### `devices`
+Database chỉ có bảng `sensor_readings`. Mỗi row là một snapshot do ESP32 Main gửi, kèm telemetry F7 mới nhất nếu gói F7 còn mới không quá 10 giây.
 
-Lưu mã thiết bị, tên, loại, trạng thái online và lần xuất hiện gần nhất.
+Các nhóm cột:
 
-### `sensor_readings`
+- Main: `device_id`, `temperature`, `humidity`, `gas_average`, `distance_cm`, `water_level_cm`;
+- F7 nullable: `f7_roll`, `f7_pitch`, `f7_tilt`, `f7_vibration`, `f7_impact`, `f7_status`;
+- trạng thái Main: `status`, `buzzer`, `buzzer_muted`, `recorded_at`.
 
-Lưu một ảnh chụp tổng hợp của Main và dữ liệu F7 mới nhất theo thời gian.
+`gas_average` là trung bình của 5 lần đọc ADC MQ-2 trong một chu kỳ, không phải ppm. `distance_cm` và `water_level_cm` là `null` khi JSN-SR04T không có echo.
 
-Các cột của ESP32 Main:
+Chỉ telemetry trực tiếp từ topic F7 mới được ghi vào các cột `f7_*`. Nếu chưa có gói F7 hoặc gói đã quá 10 giây, toàn bộ `f7_*` là `null`; số `0` chỉ có nghĩa là F7 thực sự đo được 0.
 
-- `distance_cm`, `water_level_cm`: nullable khi JSN-SR04T không có echo;
-- `status`: trạng thái nguy cơ tổng hợp SAFE/WARNING/DANGER;
-- `buzzer`: trạng thái vật lý thực tế của còi;
-- `buzzer_muted`: trạng thái tắt tiếng của alarm event hiện tại.
-
-Các cột của ESP32 F7:
-
-- `f7_roll`, `f7_pitch`: góc hiện tại của MPU6050;
-- `f7_tilt`: độ nghiêng so với vị trí lúc calibration;
-- `f7_vibration`: độ dao động trung bình trong nhóm mẫu;
-- `f7_impact`: mức thay đổi gia tốc dùng để nhận biết va đập;
-- `f7_status`: `NORMAL`, `WARNING` hoặc `DANGER`.
-
-Main và F7 cùng gửi mỗi 2 giây. Backend giữ gói F7 mới nhất trong bộ nhớ rồi ghép vào bản ghi Main tiếp theo. Backend chỉ dùng gói F7 không quá 10 giây, tránh lưu dữ liệu cũ sau khi F7 mất kết nối.
-
-Không còn bảng riêng cho F7. Toàn bộ lịch sử của Main và F7 được đọc chung qua `GET /api/readings`.
-
-Khi tạo database mới thủ công, chạy `infrastructure/database/schema.sql` trước khi khởi động backend.
+F7 không tạo row PostgreSQL riêng. Khi Main offline, F7 vẫn có thể cập nhật cache backend và gửi Field 7 lên ThingSpeak, nhưng lịch sử PostgreSQL không có snapshot mới cho đến khi Main gửi telemetry trở lại.
 
 Các index chính:
 
-- `device_id`
-- `recorded_at`
-- `(device_id, recorded_at)`
+- `device_id`;
+- `recorded_at`;
+- `(device_id, recorded_at)`.
 
-## Khởi tạo
+## Khởi tạo và thay đổi schema
 
-File `infrastructure/database/schema.sql` tạo đúng hai bảng `devices` và `sensor_readings` trong một transaction. Chạy file đúng một lần trên database trống; không cần chạy thêm `ALTER TABLE`. Nếu chạy nhầm lần thứ hai, PostgreSQL sẽ báo bảng đã tồn tại và rollback transaction.
+SQLAlchemy models và `create_tables()` là runtime source of truth. Chỉ cần tạo một database rỗng rồi chạy backend; backend sẽ tạo table còn thiếu.
+
+`infrastructure/database/schema.sql` là bản tham khảo và là lựa chọn thiết lập thủ công cho database PostgreSQL trống, không phải bước bắt buộc thứ hai.
+
+Quan trọng: sau lần cleanup/gộp F7 này, database dùng schema cũ phải được recreate hoặc migrate thủ công. `Base.metadata.create_all()` chỉ tạo table chưa tồn tại, không tự `ALTER` table cũ và không xóa bảng/cột cũ.
+
+Với demo không cần giữ dữ liệu, cách đơn giản là backup nếu cần, drop database cũ, tạo database rỗng rồi khởi động backend. Không chạy thao tác này trên database cần bảo toàn dữ liệu.
 
 ## Cấu hình
 
@@ -47,4 +38,4 @@ File `infrastructure/database/schema.sql` tạo đúng hai bảng `devices` và 
 DATABASE_URL=postgresql://user:password@host:5432/database_name
 ```
 
-Với PostgreSQL cloud có yêu cầu SSL, dùng URL do nhà cung cấp cấp sẵn, thường có `sslmode=require`. Secret chỉ đặt trong `.env`, không ghi vào source.
+Với PostgreSQL cloud yêu cầu SSL, dùng URL do nhà cung cấp cấp, thường có `sslmode=require`. Secret chỉ đặt trong `.env`, không ghi vào source.

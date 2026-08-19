@@ -2,7 +2,7 @@ function formatDate(value) {
   return new Intl.DateTimeFormat('vi-VN', {
     dateStyle: 'short',
     timeStyle: 'medium',
-    timeZone: 'Asia/Bangkok',
+    timeZone: 'Asia/Ho_Chi_Minh',
   }).format(new Date(value));
 }
 
@@ -22,7 +22,7 @@ export function ReadingsTable({ readings }) {
   if (readings.length === 0) {
     return (
       <div className="empty-state">
-        Database chưa có dữ liệu. Hãy thêm bản ghi đầu tiên bằng biểu mẫu bên trên.
+        Chưa có telemetry từ ESP32.
       </div>
     );
   }
@@ -50,7 +50,7 @@ export function ReadingsTable({ readings }) {
               <td>{reading.device_id}</td>
               <td>{display(reading.temperature, '°C')}</td>
               <td>{display(reading.humidity, '%')}</td>
-              <td>{display(reading.gas_raw)}</td>
+              <td>{display(reading.gas_average)}</td>
               <td>{display(reading.water_level_cm, ' cm')}</td>
               <td>
                 <span className={`reading-status status-${reading.status.toLowerCase()}`}>
@@ -58,7 +58,7 @@ export function ReadingsTable({ readings }) {
                 </span>
               </td>
               <td>{displayBooleanState(reading.buzzer, 'ON', 'OFF')}</td>
-              <td>{displayBooleanState(reading.buzzer_muted, 'MUTED', 'READY')}</td>
+              <td>{displayBooleanState(reading.buzzer_muted, 'MUTED', 'NOT MUTED')}</td>
             </tr>
           ))}
         </tbody>

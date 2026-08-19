@@ -182,7 +182,6 @@ float distanceCm = -1.0;
 float waterLevelCm = 0.0;
 float waterPercent = 0.0;
 
-bool dhtValid = false;
 bool waterValid = false;
 
 int temperatureLevel = SAFE;
@@ -262,12 +261,12 @@ int textToLevel(String text)
     return DANGER;
   }
 
-  if (text == "WARNING" || text == "WARN")
+  if (text == "WARNING")
   {
     return WARNING;
   }
 
-  // Accept NORMAL as SAFE.
+  // The only remaining contract value is SAFE.
   return SAFE;
 }
 
@@ -348,16 +347,12 @@ void readTemperatureAndHumiditySensor()
 
   if (isnan(measuredTemperature) || isnan(measuredHumidity))
   {
-    dhtValid = false;
-    temperatureLevel = SAFE;
-
-    Serial.println("[DHT] Read failed -> SAFE for demo");
+    Serial.println("[DHT] Read failed -> keep last valid value");
     return;
   }
 
   temperature = measuredTemperature;
   humidity = measuredHumidity;
-  dhtValid = true;
 
   if (temperature >= TEMP_DANGER)
   {
@@ -432,18 +427,13 @@ void readWaterLevelSensor()
 {
   float measuredDistance = readDistance();
 
-  // No echo -> invalid measurement.
-  // Internally clear water danger for demo, but telemetry publishes null
-  // instead of a physically impossible negative distance.
+  // No echo means unknown, not SAFE. Keep the previous local safety level,
+  // while telemetry publishes null for the failed measurement.
   if (measuredDistance < 0)
   {
     waterValid = false;
-    distanceCm = -1.0;
-    waterLevelCm = 0.0;
-    waterPercent = 0.0;
-    waterLevel = SAFE;
 
-    Serial.println("[WATER] No echo -> invalid / SAFE for demo");
+    Serial.println("[WATER] No echo -> keep last valid safety level");
     return;
   }
 
@@ -616,7 +606,7 @@ void receiveMotionThroughUdp()
   String packet = String(buffer);
   packet.trim();
 
-  // Simple packet: DANGER / WARNING / NORMAL / SAFE
+  // Simple packet: DANGER / WARNING / SAFE
   int comma1 = packet.indexOf(',');
 
   if (comma1 < 0)
@@ -1008,7 +998,7 @@ void maintainMQTT()
 
   bool motionSubscribed = mqttClient.subscribe(TOPIC_MOTION);
 
-  bool buzzerSubscribed = mqttClient.subscribe(TOPIC_BUZZER_COMMAND);
+  bool buzzerSubscribed = mqttClient.subscribe(TOPIC_BUZZER_COMMAND, 1);
 
   Serial.print("[MQTT] Motion subscribe: ");
   Serial.println(motionSubscribed ? "OK" : "FAILED");
@@ -1032,6 +1022,10 @@ void publishTelemetry()
 
   String telemetryJson = "{";
 
+  telemetryJson += "\"deviceId\":\"";
+  telemetryJson += DEVICE_ID;
+  telemetryJson += "\",";
+
   telemetryJson += "\"temperature\":";
   telemetryJson += String(temperature, 1);
   telemetryJson += ",";
@@ -1040,7 +1034,6 @@ void publishTelemetry()
   telemetryJson += String(humidity, 1);
   telemetryJson += ",";
 
-  // Preserve the current backend field name: gas
   telemetryJson += "\"gas\":";
   telemetryJson += String(gasAverage);
   telemetryJson += ",";
@@ -1074,36 +1067,9 @@ void publishTelemetry()
 
   telemetryJson += ",";
 
-  // Preserve the current backend field names: motion / system
   telemetryJson += "\"motion\":\"";
   telemetryJson += levelToText(motionLevel);
   telemetryJson += "\",";
-
-  // These fields let the backend identify and display F7 data
-  // received through the local UDP fallback path.
-  telemetryJson += "\"motionSource\":\"";
-  telemetryJson += motionSource;
-  telemetryJson += "\",";
-
-  telemetryJson += "\"motionRoll\":";
-  telemetryJson += String(motionRoll, 1);
-  telemetryJson += ",";
-
-  telemetryJson += "\"motionPitch\":";
-  telemetryJson += String(motionPitch, 1);
-  telemetryJson += ",";
-
-  telemetryJson += "\"motionTilt\":";
-  telemetryJson += String(motionTilt, 1);
-  telemetryJson += ",";
-
-  telemetryJson += "\"motionVibration\":";
-  telemetryJson += String(motionVibration, 2);
-  telemetryJson += ",";
-
-  telemetryJson += "\"motionImpact\":";
-  telemetryJson += String(motionImpact, 2);
-  telemetryJson += ",";
 
   telemetryJson += "\"system\":\"";
   telemetryJson += levelToText(systemLevel);
@@ -1169,7 +1135,8 @@ void printSystemStatus()
 
   if (!waterValid)
   {
-    Serial.println("UNKNOWN -> SAFE for demo");
+    Serial.print("UNKNOWN -> keep ");
+    Serial.println(levelToText(waterLevel));
   }
   else
   {
@@ -1210,7 +1177,7 @@ void printSystemStatus()
   }
   else
   {
-    Serial.println("NORMAL");
+    Serial.println("SAFE");
   }
 
   Serial.print("Cause       : ");

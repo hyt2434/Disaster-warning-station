@@ -53,9 +53,9 @@ def download_thingspeak_records() -> list[dict]:
 
 
 def prepare_training_data(records: list[dict]) -> tuple[pd.DataFrame, pd.Series]:
-    """Convert ThingSpeak field1-field4 to the model's sensor features."""
+    """Convert ThingSpeak fields 1, 3 and 4 to the model's sensor features."""
     data_frame = pd.DataFrame(records)
-    required_fields = ["field1", "field2", "field3", "field4"]
+    required_fields = ["field1", "field3", "field4"]
 
     missing_fields = [
         field_name
@@ -70,16 +70,14 @@ def prepare_training_data(records: list[dict]) -> tuple[pd.DataFrame, pd.Series]
     data_frame = data_frame.rename(
         columns={
             "field1": "temperature",
-            "field2": "humidity",
-            "field3": "gas_filtered",
+            "field3": "gas_average",
             "field4": "water_level_cm",
         }
     )
 
     sensor_columns = [
         "temperature",
-        "humidity",
-        "gas_filtered",
+        "gas_average",
         "water_level_cm",
     ]
 
@@ -101,7 +99,7 @@ def prepare_training_data(records: list[dict]) -> tuple[pd.DataFrame, pd.Series]
     # Field 5 and Field 6 are statuses already calculated by the devices.
     # Do not use them as AI inputs because Field 6 already contains the answer.
     temperature_is_dangerous = data_frame["temperature"] >= 40
-    gas_is_dangerous = data_frame["gas_filtered"] >= GAS_DANGER_THRESHOLD
+    gas_is_dangerous = data_frame["gas_average"] >= GAS_DANGER_THRESHOLD
     water_is_dangerous = data_frame["water_level_cm"] >= WATER_DANGER_LEVEL_CM
 
     labels = (
@@ -110,10 +108,7 @@ def prepare_training_data(records: list[dict]) -> tuple[pd.DataFrame, pd.Series]
         | water_is_dangerous
     ).astype(int)
 
-    data_frame["water_danger"] = water_is_dangerous.astype(int)
-    features = data_frame[
-        ["temperature", "humidity", "gas_filtered", "water_danger"]
-    ]
+    features = data_frame[["temperature", "gas_average", "water_level_cm"]]
 
     return features, labels
 

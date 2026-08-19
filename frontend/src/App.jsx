@@ -5,14 +5,12 @@ import { F7Panel } from './components/F7Panel';
 import { Header } from './components/Header';
 import { MonitoringFunctions } from './components/MonitoringFunctions';
 import { PredictionPanel } from './components/PredictionPanel';
-import { ReadingForm } from './components/ReadingForm';
 import { ReadingsTable } from './components/ReadingsTable';
 import { SystemStatusPanel } from './components/SystemStatusPanel';
 import { ThingSpeakHistoryChart } from './components/ThingSpeakHistoryChart';
 import { TopNavigation } from './components/TopNavigation';
 import {
   controlBuzzer,
-  createReading,
   getHealth,
   getLatestF7Telemetry,
   getReadings,
@@ -39,7 +37,6 @@ export default function App() {
   const [cloudHistory, setCloudHistory] = useState(null);
   const [historyError, setHistoryError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [sendingCommand, setSendingCommand] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
@@ -107,22 +104,6 @@ export default function App() {
 
     return () => window.clearInterval(refreshTimer);
   }, [loadDashboard]);
-
-  async function saveReading(payload) {
-    setSaving(true);
-    setError('');
-    setMessage('');
-
-    try {
-      await createReading(payload);
-      setMessage('Đã lưu bản ghi vào PostgreSQL thành công.');
-      await loadDashboard();
-    } catch (requestError) {
-      setError(getErrorMessage(requestError, 'Không thể lưu dữ liệu.'));
-    } finally {
-      setSaving(false);
-    }
-  }
 
   async function sendBuzzerCommand(state) {
     setSendingCommand(true);
@@ -196,18 +177,6 @@ export default function App() {
 
         <SystemStatusPanel health={health} />
 
-        <section className="section-block form-section" id="add-reading" aria-labelledby="form-title">
-          <div className="section-heading">
-            <div>
-              <p className="eyebrow">Demo database</p>
-              <h2 id="form-title">Nhập dữ liệu thử</h2>
-            </div>
-          </div>
-          <p className="form-explanation">
-            Dùng biểu mẫu này khi chưa bật ESP32 nhưng vẫn muốn kiểm tra monitor và dự đoán.
-          </p>
-          <ReadingForm saving={saving} onSubmit={saveReading} />
-        </section>
       </main>
 
       <footer className="page-footer">

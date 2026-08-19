@@ -228,9 +228,7 @@ h2 {
 }
 
 .connection-badge.online,
-.status-normal,
-.status-safe,
-.status-stable {
+.status-safe {
   color: var(--green);
   background: var(--green-soft);
   border: 1px solid #a7e1bf;
@@ -249,8 +247,7 @@ h2 {
   border: 1px solid #f0d27a;
 }
 
-.status-danger,
-.status-critical {
+.status-danger {
   color: var(--red);
   background: var(--red-soft);
   border: 1px solid #f1b1ad;
@@ -519,7 +516,6 @@ h2 {
 .sensor-value-box,
 .mini-value,
 .buzzer-state-card,
-.notification-card > div,
 .system-status-item {
   padding: 12px;
   background: white;
@@ -532,7 +528,6 @@ h2 {
 .water-level-value span,
 .mini-value span,
 .buzzer-state-card span,
-.notification-card span,
 .system-status-item span {
   display: block;
   color: var(--muted);
@@ -841,12 +836,6 @@ h2 {
   font-size: 0.74rem;
 }
 
-.f7-layout {
-  display: grid;
-  grid-template-columns: minmax(420px, 1.4fr) minmax(280px, 0.6fr);
-  gap: 16px;
-}
-
 .f7-readings {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -859,34 +848,11 @@ h2 {
 }
 
 .mini-value strong,
-.notification-card strong,
 .system-status-item strong {
   display: block;
   margin-top: 8px;
   color: var(--text);
   font-size: 0.92rem;
-}
-
-.notification-card {
-  padding: 14px;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  background: var(--surface-soft);
-  border: 1px solid var(--border);
-  border-radius: 9px;
-}
-
-.notification-card .primary-button,
-.notification-card p {
-  grid-column: 1 / -1;
-}
-
-.notification-card p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.75rem;
-  line-height: 1.5;
 }
 
 .system-status-grid {
@@ -1089,45 +1055,6 @@ h2 {
   line-height: 1.55;
 }
 
-.form-section {
-  margin-top: 24px;
-}
-
-.reading-form {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-}
-
-.reading-form label {
-  display: grid;
-  gap: 7px;
-  color: #42526a;
-  font-size: 0.78rem;
-  font-weight: 750;
-}
-
-.reading-form input,
-.reading-form select {
-  width: 100%;
-  min-height: 42px;
-  padding: 0 11px;
-  color: var(--text);
-  background: white;
-  border: 1px solid var(--border-strong);
-  border-radius: 7px;
-}
-
-.reading-form input:focus,
-.reading-form select:focus {
-  border-color: #3b82f6;
-  outline: 3px solid #dbeafe;
-}
-
-.reading-form .primary-button {
-  align-self: end;
-}
-
 .row-count {
   color: #42526a;
   background: #eef3f8;
@@ -1244,10 +1171,6 @@ tbody tr:hover {
     grid-column: 1 / -1;
   }
 
-  .f7-layout {
-    grid-template-columns: 1fr;
-  }
-
   .system-status-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1291,10 +1214,6 @@ tbody tr:hover {
     grid-template-columns: 1fr;
   }
 
-  .reading-form {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .device-control-layout {
     grid-template-columns: 1fr;
   }
@@ -1333,8 +1252,7 @@ tbody tr:hover {
   .sensor-functions-grid,
   .f7-readings,
   .system-status-grid,
-  .function-legend,
-  .reading-form {
+  .function-legend {
     grid-template-columns: 1fr;
   }
 
@@ -1346,8 +1264,7 @@ tbody tr:hover {
     grid-column: auto;
   }
 
-  .control-buttons,
-  .notification-card {
+  .control-buttons {
     grid-template-columns: 1fr;
   }
 
